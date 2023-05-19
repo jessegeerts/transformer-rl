@@ -58,8 +58,8 @@ class TrajectoryDataset(Dataset):
         self.state_mean, self.state_std = np.mean(states, axis=0), np.std(states, axis=0) + 1e-6
 
         # normalize states  (TODO: maybe dont do this for one-hot states)
-        for traj in self.trajectories:
-            traj['observations'] = (traj['observations'] - self.state_mean) / self.state_std
+        #for traj in self.trajectories:
+        #    traj['observations'] = (traj['observations'] - self.state_mean) / self.state_std
 
     def get_state_stats(self):
         return self.state_mean, self.state_std

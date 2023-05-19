@@ -119,7 +119,7 @@ class DecisionTransformer(nn.Module):
         :param returns_to_go:
         :return:
         """
-        B, T, _ = states.shape  # batch size, sequence length, state/action dimension ?
+        B, T, _ = states.shape  # batch size, sequence length, state dimension
 
         time_embeddings = self.embed_timestep(timesteps)  # [B, T, H]
 
@@ -144,7 +144,8 @@ class DecisionTransformer(nn.Module):
         # h[:, 0, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t
         # h[:, 1, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t, s_t
         # h[:, 2, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t, s_t, a_t
-        h = h.reshape(B, 3, T, self.h_dim).permute(0, 2, 1, 3)  # [B, T, 3, H]
+        # we do this such that we can predict the next state, action and rtg given the current state, action and rtg
+        h = h.reshape(B, 3, T, self.h_dim)  #.permute(0, 2, 1, 3)  # [B, T, 3, H]
 
         # get predictions
         rtg_preds = self.predict_rtg(h[:, 2])  # predict next rtg given r, s, a

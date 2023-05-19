@@ -8,11 +8,14 @@ import os
 np.random.seed(3)
 
 n_epochs = 100
-one_hot = False
+one_hot = True
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 data_dir = os.path.join(os.path.split(os.path.split(os.path.abspath(__file__))[0])[0], 'trajectories')
+
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
 
 if one_hot:
     fn = 'trajectories_onehot.pkl'
