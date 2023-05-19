@@ -155,5 +155,14 @@ class DecisionTransformer(nn.Module):
 
 
 if __name__ == '__main__':
+    from environments.environments import GridWorld
+
+    env = GridWorld()
+    # collect random walk trajectories from grid world environment
+
+
+
+
+
     dt = DecisionTransformer(3, 2, 2, 32, 10, 4, 0.1)
     print(dt)

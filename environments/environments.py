@@ -98,7 +98,7 @@ class GridWorld(gym.Env):
 
 
 if __name__ == '__main__':
-    env = GridWorld()
+    env = GridWorld(terminal_reward=1.0, move_reward=-1.0)
     env.reset()
     while not env.done:
         action = env.action_space.sample()
