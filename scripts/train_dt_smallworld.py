@@ -12,15 +12,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from utils import evaluate_on_env
-from definitions import model_save_dir
+from definitions import model_save_dir, ROOT_FOLDER
 import os
 from datetime import datetime
 
 
+traj_dir = os.path.join(ROOT_FOLDER, 'trajectories')
+
 torch.set_default_dtype(torch.float32)
 
 # set some hyperparameters
-n_training_iters = 20
+n_training_iters = 30
 n_updates_per_iter = 100
 
 
@@ -38,16 +40,16 @@ wt_decay = 1e-4             # weight decay
 warmup_steps = 10000        # warmup steps for lr scheduler
 
 # eval hyperparameters
-rtg_target = -40.
+rtg_target = 1.
 rtg_scale = 1.0
 num_eval_episodes = 10
 
-map_fn = "map2.txt"
-env = GridWorld(file_name=map_fn, terminal_reward=0.0, move_reward=-1.0, bump_reward=-1.)
+map_fn = "map4.txt"
+env = GridWorld(file_name=map_fn, terminal_reward=1.0, move_reward=0.0, bump_reward=0., bomb_reward=-1.0)
 
 # prepare data
 # load trajectories
-trajectories = pickle.load(open('trajectories/trajectories_map2_onehot_100_epochs.pkl', 'rb'))
+trajectories = pickle.load(open(os.path.join(traj_dir, 'trajectories_map4_discrete_200_epochs.pkl'), 'rb'))
 dataset = TrajectoryDataset(trajectories, context_len=10, rtg_scale=1.0)
 traj_data_loader = DataLoader(dataset, batch_size=1, shuffle=False, pin_memory=True, drop_last=True)
 
@@ -81,10 +83,12 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(
     lambda steps: min((steps + 1) / warmup_steps, 1)
 )
 
+
 loss_func = nn.CrossEntropyLoss()
 
 
 eval_avg_rewards = []
+
 
 for train_i in range(n_training_iters):
     log_action_losses = []
@@ -92,12 +96,12 @@ for train_i in range(n_training_iters):
         # sample a trajectory
         try:
             timesteps, states, actions, returns_to_go, traj_mask = next(data_iter)
-        except StopIteration:
+        except:
             data_iter = iter(traj_data_loader)
             timesteps, states, actions, returns_to_go, traj_mask = next(data_iter)
 
         timesteps = timesteps.type(torch.int32)  # B x T
-        states = states.type(torch.float32)  # B x T x state_dim
+        states = states.type(torch.int)  # B x T x state_dim
         actions = actions.type(torch.int32)  # B x T x act_dim
         returns_to_go = returns_to_go.type(torch.float32).unsqueeze(-1)  # B x T x 1
         traj_mask = traj_mask.type(torch.int32)  # B x T
@@ -151,7 +155,3 @@ torch.save(model.state_dict(), os.path.join(model_save_dir, 'GridWorldTransforme
            datetime.now().month,
            datetime.now().day,
            datetime.now().hour)))
-
-
-# TODO: what's it learning here? it's trying to predict the next action given previous states and rewards-to-go.
-# TODO: make a calibration plot for the model's initial RTG versus the actual rewards it gets

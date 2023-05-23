@@ -78,7 +78,7 @@ class Block(nn.Module):
 
 class DecisionTransformer(nn.Module):
     def __init__(self, state_dim, act_dim, n_blocks, h_dim, context_len, n_heads, drop_p, max_timestep=4096,
-                 discrete_actions=True):
+                 discrete_actions=True, discrete_states=True):
         super().__init__()
 
         self.state_dim = state_dim
@@ -94,7 +94,11 @@ class DecisionTransformer(nn.Module):
         self.embed_ln = nn.LayerNorm(h_dim)
         self.embed_timestep = nn.Embedding(max_timestep, h_dim)
         self.embed_rtg = torch.nn.Linear(1, h_dim)
-        self.embed_state = torch.nn.Linear(state_dim, h_dim)
+
+        if discrete_states:
+            self.embed_state = nn.Embedding(state_dim, h_dim)
+        else:
+            self.embed_state = torch.nn.Linear(state_dim, h_dim)
 
         if discrete_actions:
             self.embed_action = nn.Embedding(act_dim, h_dim)
@@ -119,7 +123,10 @@ class DecisionTransformer(nn.Module):
         :param returns_to_go:
         :return:
         """
-        B, T, _ = states.shape  # batch size, sequence length, state dimension
+        if states.ndim == 2:
+            B, T = states.shape  # batch size, sequence length
+        else:
+            B, T, _ = states.shape  # batch size, sequence length, state dimension
 
         time_embeddings = self.embed_timestep(timesteps)  # [B, T, H]
 

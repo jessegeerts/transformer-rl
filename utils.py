@@ -1,7 +1,9 @@
 import torch
 from torch.nn import functional as F
 
-def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_episodes=10, max_ep_len=1000):
+
+def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_episodes=10, max_ep_len=1000,
+                    discrete=True):
 
     eval_batch_size = 1  # required for forward pass
 
@@ -25,7 +27,10 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
 
             # zeros place holders
             actions = torch.zeros((eval_batch_size, max_ep_len), dtype=torch.int32)
-            states = torch.zeros((eval_batch_size, max_ep_len, state_dim), dtype=torch.float32)
+            if discrete:
+                states = torch.zeros((eval_batch_size, max_ep_len), dtype=torch.int32)
+            else:
+                states = torch.zeros((eval_batch_size, max_ep_len, state_dim), dtype=torch.int32)
             rewards_to_go = torch.zeros((eval_batch_size, max_ep_len, 1), dtype=torch.float32)
 
             # init episode
@@ -39,7 +44,10 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 total_timesteps += 1
 
                 # add state in placeholder
-                states[0, t] = F.one_hot(torch.tensor(running_state), num_classes=state_dim).to(torch.float32) # running_state # torch.from_numpy(running_state)  # .to(device)
+                if discrete:
+                    states[0, t] = running_state
+                else:
+                    states[0, t] = F.one_hot(torch.tensor(running_state), num_classes=state_dim).to(torch.float32) # running_state # torch.from_numpy(running_state)  # .to(device)
 
                 # calcualate running rtg and add it in placeholder
                 running_rtg = running_rtg - (running_reward / rtg_scale)
@@ -66,6 +74,10 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 actions[0, t] = act.item()
 
                 total_reward += running_reward
+
+                if done:
+                    break
+
 
     results['eval/avg_reward'] = total_reward / num_eval_episodes
     results['eval/avg_ep_len'] = total_timesteps / num_eval_episodes

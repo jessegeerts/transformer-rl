@@ -57,11 +57,17 @@ class GridWorld(gym.Env):
     def step(self, action):
         assert self.action_space.contains(action)
         if self.state in self.goals or np.random.rand() < self.fail_rate:
+            self.done = True
+            return self.state, 0.0, self.done, None
+        elif self.state in self.bombs:
+            self.done = True
             return self.state, 0.0, self.done, None
         else:
             new_state = self.take_action(action)
             reward = self.get_reward(new_state)
             self.state = new_state
+            if self.state in self.goals or self.state in self.bombs:
+                self.done = True
             return self.state, reward, self.done, None
 
     def reset(self):
