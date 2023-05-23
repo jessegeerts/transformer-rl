@@ -22,8 +22,8 @@ if not os.path.exists(data_dir):
 
 
 map_fn = "map4.txt"
-env = GridWorld(file_name=map_fn, terminal_reward=1.0, move_reward=0.0, bump_reward=0.,
-                 bomb_reward=-1.0)
+env = GridWorld(file_name=map_fn, terminal_reward=1.0, move_reward=0.0, bump_reward=0., bomb_reward=-1.0,
+                max_steps=250)
 
 n_states = env.n_states
 
@@ -50,7 +50,6 @@ def state_encoding(state, one_hot=False):
 trajectories = []
 for epoch in range(n_epochs):
     env.reset()
-
 
     action = env.action_space.sample()
 

@@ -13,7 +13,7 @@ LEFT = 3
 
 class GridWorld(gym.Env):
     def __init__(self, file_name="map3.txt", fail_rate=0.0, terminal_reward=1.0, move_reward=0.0, bump_reward=-0.5,
-                 bomb_reward=-1.0):
+                 bomb_reward=-1.0, max_steps=1000):
         self.n = None
         self.m = None
         self.bombs = []
@@ -53,26 +53,23 @@ class GridWorld(gym.Env):
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Discrete(self.n_states)
         self.done = False
+        self.max_steps = max_steps
+        self.step_count = 0
 
     def step(self, action):
         assert self.action_space.contains(action)
-        if self.state in self.goals or np.random.rand() < self.fail_rate:
+        new_state = self.take_action(action)
+        reward = self.get_reward(new_state)
+        self.state = new_state
+        if self.state in self.goals or self.state in self.bombs:
             self.done = True
-            return self.state, 0.0, self.done, None
-        elif self.state in self.bombs:
-            self.done = True
-            return self.state, 0.0, self.done, None
-        else:
-            new_state = self.take_action(action)
-            reward = self.get_reward(new_state)
-            self.state = new_state
-            if self.state in self.goals or self.state in self.bombs:
-                self.done = True
-            return self.state, reward, self.done, None
+        self.step_count += 1
+        return self.state, reward, self.done, None
 
     def reset(self):
         self.done = False
         self.state = self.start
+        self.step_count = 0
         return self.state
 
     def render(self, mode='human', close=False):
@@ -95,7 +92,7 @@ class GridWorld(gym.Env):
     def get_reward(self, new_state):
         if new_state in self.goals:
             self.done = True
-            return self.terminal_reward
+            return 1 - 0.9 * (self.step_count / self.max_steps)
         elif new_state in self.bombs:
             return self.bomb_reward
         elif new_state == self.state:
