@@ -9,7 +9,7 @@ from environments.environments import GridWorld
 
 from definitions import model_save_dir, ROOT_FOLDER
 
-context_len = 10
+context_len = 5
 
 map_fn = "map4.txt"
 env = GridWorld(file_name=map_fn, terminal_reward=1.0, move_reward=0.0, bump_reward=0., bomb_reward=-1.0)
@@ -35,11 +35,11 @@ model = DecisionTransformer(
 )
 
 
-model.load_state_dict(torch.load(os.path.join(model_save_dir, 'GridWorldTransformer_5_22_17.pt')))
+model.load_state_dict(torch.load(os.path.join(model_save_dir, 'GridWorldTransformer_5_23_18.pt')))
 model.eval()
 
 
-rtg_targets = [-1., 1.]
+rtg_targets = [.999, -1]
 
 
 for target in rtg_targets:

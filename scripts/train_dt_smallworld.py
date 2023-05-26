@@ -15,6 +15,7 @@ from utils import evaluate_on_env
 from definitions import model_save_dir, ROOT_FOLDER
 import os
 from datetime import datetime
+import wandb
 
 
 traj_dir = os.path.join(ROOT_FOLDER, 'trajectories')
@@ -22,13 +23,13 @@ traj_dir = os.path.join(ROOT_FOLDER, 'trajectories')
 torch.set_default_dtype(torch.float32)
 
 # set some hyperparameters
-n_training_iters = 30
+n_training_iters = 500
 n_updates_per_iter = 100
 
 # model hyperparameters
 n_blocks = 1
 embed_dim = 32
-context_len = 5
+context_len = 1
 n_heads = 4
 dropout_p = 0.1
 
@@ -121,16 +122,16 @@ for train_i in range(n_training_iters):
         # calculate loss
         # only consider non-padded elements
         action_preds = action_preds.view(-1, act_dim)[traj_mask.view(-1, ) > 0]
-        action_target = action_target.squeeze(0)[traj_mask.view(-1, ) > 0].squeeze(-1)
+        action_target = action_target.squeeze(0)[traj_mask.view(-1, ) > 0]
 
         action_loss = loss_func(action_preds, action_target)
 
         state_preds = state_preds.view(-1, state_dim)[traj_mask.view(-1, ) > 0]
-        state_target = state_target.squeeze(0)[traj_mask.view(-1, ) > 0].squeeze(-1)
+        state_target = state_target.squeeze(0)[traj_mask.view(-1, ) > 0]
 
         state_loss = loss_func(state_preds, state_target)
 
-        loss = state_loss + action_loss
+        loss = action_loss + state_loss
 
         loss.backward()
 

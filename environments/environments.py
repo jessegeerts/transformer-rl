@@ -1,6 +1,8 @@
 import gymnasium as gym
 from gymnasium import error, spaces, utils
 from gymnasium.utils import seeding
+import pygame
+#from gym.envs.classic_control.rendering import SimpleImageViewer
 
 import numpy as np
 import os
@@ -12,8 +14,10 @@ LEFT = 3
 
 
 class GridWorld(gym.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 8}
+
     def __init__(self, file_name="map3.txt", fail_rate=0.0, terminal_reward=1.0, move_reward=0.0, bump_reward=-0.5,
-                 bomb_reward=-1.0, max_steps=1000):
+                 bomb_reward=-1.0, max_steps=1000, render_mode=None):
         self.n = None
         self.m = None
         self.bombs = []
@@ -56,6 +60,12 @@ class GridWorld(gym.Env):
         self.max_steps = max_steps
         self.step_count = 0
 
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        self.window_size = 512  # The size of the PyGame window
+        self.render_mode = render_mode
+        self.window = None  # will be a reference to the window that we draw to.
+        self.clock = None  # used to ensure that the environment is rendered at the correct framerate in human-mode.
+
     def step(self, action):
         assert self.action_space.contains(action)
         new_state = self.take_action(action)
@@ -72,9 +82,6 @@ class GridWorld(gym.Env):
         self.step_count = 0
         return self.state
 
-    def render(self, mode='human', close=False):
-        pass
-
     def take_action(self, action):
         row = self.state // self.n
         col = self.state % self.n
@@ -89,6 +96,11 @@ class GridWorld(gym.Env):
         new_state = row * self.n + col
         return new_state
 
+    def get_state_loc(self, state):
+        row = state // self.n
+        col = state % self.n
+        return np.array([row, col])
+
     def get_reward(self, new_state):
         if new_state in self.goals:
             self.done = True
@@ -99,11 +111,100 @@ class GridWorld(gym.Env):
             return self.bump_reward
         return self.move_reward
 
+    def render(self):
+        if self.render_mode == "rgb_array":
+            return self._render_frame()
+        elif self.render_mode == "human":
+            self._render_frame()
+            pygame.display.flip()
+            self.clock.tick(self.metadata["render_fps"])
+
+    def _render_frame(self):
+        if self.window is None and self.render_mode == "human":
+            pygame.init()
+            pygame.display.init()
+            self.window = pygame.display.set_mode(
+                (self.window_size, self.window_size)
+            )
+        if self.clock is None and self.render_mode == "human":
+            self.clock = pygame.time.Clock()
+
+        canvas = pygame.Surface((self.window_size, self.window_size))
+        canvas.fill((255, 255, 255))
+        pix_square_size = (
+                self.window_size / self.n
+        )  # The size of a single grid square in pixels
+
+        # First we draw the goal location(s)
+        for goal in self.goals:
+            pygame.draw.rect(
+                canvas,
+                (0, 255, 0),
+                pygame.Rect(
+                    pix_square_size * self.get_state_loc(goal),
+                    (pix_square_size, pix_square_size),
+                ),
+            )
+        # Next we draw the bomb location(s)
+        for bomb in self.bombs:
+            pygame.draw.rect(
+                canvas,
+                (255, 0, 0),
+                pygame.Rect(
+                    pix_square_size * self.get_state_loc(bomb),
+                    (pix_square_size, pix_square_size),
+                ),
+            )
+        # Now we draw the agent
+        pygame.draw.circle(
+            canvas,
+            (0, 0, 255),
+            (self.get_state_loc(self.state) + 0.5) * pix_square_size,
+            pix_square_size / 3,
+        )
+
+        # Finally, add some gridlines
+        for x in range(self.n + 1):
+            pygame.draw.line(
+                canvas,
+                0,
+                (0, pix_square_size * x),
+                (self.window_size, pix_square_size * x),
+                width=3,
+            )
+            pygame.draw.line(
+                canvas,
+                0,
+                (pix_square_size * x, 0),
+                (pix_square_size * x, self.window_size),
+                width=3,
+            )
+
+        if self.render_mode == "human":
+            # The following line copies our drawings from `canvas` to the visible window
+            self.window.blit(canvas, canvas.get_rect())
+            pygame.event.pump()
+            pygame.display.update()
+
+            # We need to ensure that human-rendering occurs at the predefined framerate.
+            # The following line will automatically add a delay to keep the framerate stable.
+            self.clock.tick(self.metadata["render_fps"])
+        else:  # rgb_array
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
+            )
+
+    def close(self):
+        if self.window is not None:
+            pygame.display.quit()
+            pygame.quit()
+
 
 if __name__ == '__main__':
-    env = GridWorld(terminal_reward=1.0, move_reward=-1.0)
+    env = GridWorld(terminal_reward=1.0, move_reward=0.0, render_mode='human', file_name='map4.txt')
     env.reset()
     while not env.done:
+        env.render()
         action = env.action_space.sample()
         state, reward, done, _ = env.step(action)
         print(state, reward, done)

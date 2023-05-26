@@ -3,8 +3,7 @@ from torch.nn import functional as F
 
 
 def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_episodes=10, max_ep_len=1000,
-                    discrete=True):
-
+                    discrete=True, render=False):
     eval_batch_size = 1  # required for forward pass
 
     results = {}
@@ -12,7 +11,6 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
     total_timesteps = 0
 
     state_dim = env.observation_space.n
-    act_dim = env.action_space.n
 
     # same as timesteps used for training the transformer
     # also, crashes if device is passed to arange()
@@ -47,37 +45,37 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 if discrete:
                     states[0, t] = running_state
                 else:
-                    states[0, t] = F.one_hot(torch.tensor(running_state), num_classes=state_dim).to(torch.float32) # running_state # torch.from_numpy(running_state)  # .to(device)
+                    states[0, t] = F.one_hot(torch.tensor(running_state), num_classes=state_dim).to(
+                        torch.float32)  # running_state # torch.from_numpy(running_state)  # .to(device)
 
                 # calcualate running rtg and add it in placeholder
                 running_rtg = running_rtg - (running_reward / rtg_scale)
                 rewards_to_go[0, t] = running_rtg
 
                 if t < context_len:
-                    _, act_preds, _ = model.forward(timesteps[:,:context_len],
-                                                states[:,:context_len],
-                                                actions[:,:context_len],
-                                                rewards_to_go[:,:context_len])
-                    act = act_preds[0, t].detach()
+                    _, act_preds, _ = model.forward(timesteps[:, :context_len],
+                                                    states[:, :context_len],
+                                                    actions[:, :context_len],
+                                                    rewards_to_go[:, :context_len])
+                    act_preds = act_preds[0, t].detach()
                 else:
-                    _, act_preds, _ = model.forward(timesteps[:,t-context_len+1:t+1],
-                                                states[:,t-context_len+1:t+1],
-                                                actions[:,t-context_len+1:t+1],
-                                                rewards_to_go[:,t-context_len+1:t+1])
-                    act = act_preds[0, -1].detach()
+                    _, act_preds, _ = model.forward(timesteps[:, t - context_len + 1:t + 1],
+                                                    states[:, t - context_len + 1:t + 1],
+                                                    actions[:, t - context_len + 1:t + 1],
+                                                    rewards_to_go[:, t - context_len + 1:t + 1])
+                    act_preds = act_preds[0, -1].detach()
 
-                m = torch.nn.Softmax(dim=-1)
-                act = torch.argmax(m(act)).numpy()
+                softmax_act = torch.multinomial(act_preds.softmax(-1), 1).item()
+                act = torch.argmax(act_preds).item()  # TODO: why not use softmax?
                 running_state, running_reward, done, _ = env.step(act)
 
                 # add action in placeholder
-                actions[0, t] = act.item()
+                actions[0, t] = act
 
                 total_reward += running_reward
 
                 if done:
                     break
-
 
     results['eval/avg_reward'] = total_reward / num_eval_episodes
     results['eval/avg_ep_len'] = total_timesteps / num_eval_episodes
