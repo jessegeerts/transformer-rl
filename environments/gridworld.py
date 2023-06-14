@@ -179,14 +179,15 @@ class GridWorld(gym.Env):
                 canvas,
                 0,
                 (0, pix_square_size * x),
-                (self.window_size, pix_square_size * x),
+                (self.m *pix_square_size , pix_square_size * x),
                 width=3,
             )
+        for x in range(self.m + 1):
             pygame.draw.line(
                 canvas,
                 0,
                 (pix_square_size * x, 0),
-                (pix_square_size * x, self.window_size),
+                (pix_square_size * x, self.n * pix_square_size),
                 width=3,
             )
 
