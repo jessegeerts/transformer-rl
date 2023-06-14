@@ -5,7 +5,7 @@ from definitions import model_save_dir
 import os
 from decision_transformer import DecisionTransformer
 from utils import evaluate_on_env
-from environments.environments import GridWorld
+from environments.gridworld import GridWorld
 
 from definitions import model_save_dir, ROOT_FOLDER
 

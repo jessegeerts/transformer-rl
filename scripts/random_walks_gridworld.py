@@ -1,7 +1,7 @@
 """Collect some trajectories from a random policy and save in right format for TrajectoryDataset"""
 
 import numpy as np
-from environments.environments import GridWorld
+from environments.gridworld import GridWorld
 import pickle
 import os
 import matplotlib.pyplot as plt

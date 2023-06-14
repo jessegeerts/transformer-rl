@@ -4,7 +4,7 @@ from prepare_trajectory_data import TrajectoryDataset
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch import nn
-from environments.environments import GridWorld
+from environments.gridworld import GridWorld
 import torch
 import pickle
 from decision_transformer import DecisionTransformer
