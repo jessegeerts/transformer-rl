@@ -79,19 +79,26 @@ def collect_trajectories(env, num_trials, error_rate, render=False):
     directions = [right_way_around, left_way_around]
     direction_index = 0  # start with the first direction in the list
     trajectories = []
+    n_laps_per_trajectory = 10
 
     for _ in range(num_trials):
-        # occasionally make an error
-        if random.random() < error_rate:
-            # repeat the last direction
-            direction = directions[direction_index]
-        else:
-            # alternate direction
-            direction = directions[direction_index]
-            direction_index = (direction_index + 1) % 2  # toggle between 0 and 1
+        env.reset()
 
-        states, actions, rewards, total_reward = direction(env, render)
+        states, actions, rewards = [], [], []
+        for lap in range(n_laps_per_trajectory):
+            # occasionally make an error
+            if random.random() < error_rate:
+                # repeat the last direction
+                direction = directions[direction_index]
+            else:
+                # alternate direction
+                direction = directions[direction_index]
+                direction_index = (direction_index + 1) % 2  # toggle between 0 and 1
 
+            lap_states, lap_actions, lap_rewards, _ = direction(env, render)
+            states += lap_states
+            actions += lap_actions
+            rewards += lap_rewards
         trajectories.append({'observations': states, 'actions': actions, 'rewards': rewards})
 
     return trajectories
@@ -106,7 +113,7 @@ if __name__ == '__main__':
 
     n_epochs = 100
 
-    data_dir = os.path.join(ROOT_FOLDER, 'trajectories')
+    data_dir = os.path.join(ROOT_FOLDER, 'trajectories', 'Tmaze')
 
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
@@ -114,7 +121,7 @@ if __name__ == '__main__':
 
     env = AltTmaze(render_mode='human')
     env.reset()
-    env.render()
+    #env.render()
     error_rate = 0.2  # 20% chance of making an error
     trajectories = collect_trajectories(env, n_epochs, error_rate, render=False)
     env.close()
