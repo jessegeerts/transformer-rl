@@ -75,7 +75,10 @@ def left_way_around(env, render=False):
 
 
 def collect_trajectories(env, num_trials, error_rate, render=False):
-    """Collects simulated trajectories through the maze, alternating between left and right way around unless an error is made."""
+    """Collects simulated trajectories through the maze, alternating between left and right way around unless an error is made.
+
+    Store trajectores in list of dictionaries with keys 'observations', 'actions', 'rewards', and values are numpy arrays.
+    """
     directions = [right_way_around, left_way_around]
     direction_index = 0  # start with the first direction in the list
     trajectories = []
@@ -99,8 +102,7 @@ def collect_trajectories(env, num_trials, error_rate, render=False):
             states += lap_states
             actions += lap_actions
             rewards += lap_rewards
-        trajectories.append({'observations': states, 'actions': actions, 'rewards': rewards})
-
+        trajectories.append({'observations': np.array(states), 'actions': np.array(actions), 'rewards': np.array(rewards)})
     return trajectories
 
 
