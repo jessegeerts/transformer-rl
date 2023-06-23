@@ -69,6 +69,8 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 act = torch.argmax(act_preds).item()  # TODO: why not use softmax?
                 running_state, running_reward, done, _ = env.step(act)
 
+                if render:
+                    env.render()
                 # add action in placeholder
                 actions[0, t] = act
 

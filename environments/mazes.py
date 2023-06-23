@@ -53,6 +53,7 @@ def right_way_around(env, render=False):
 
     return states, action_seq, rewards, total_reward
 
+
 def left_way_around(env, render=False):
     actions = [0, 3, 2, 1]
     num_steps = [5, 4, 5, 4]  # Number of steps for each action
