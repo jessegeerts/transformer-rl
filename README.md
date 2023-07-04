@@ -1,3 +1,3 @@
 # transformer-rl
 
-Simple implementation of Decision Transformer, to test on gridworld environments. 
+implementation of Decision Transformer on several gridworld environments. This repo is intended to study DT's long-term credit assignment capabilities
