@@ -1,2 +1,6 @@
 .idea/*
 environments/__pycache__/*
+trajectories/*
+**/__pycache__/
+models/*
+wandb/
