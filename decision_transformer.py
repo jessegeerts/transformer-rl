@@ -51,7 +51,7 @@ class CausalMultiheadAttention(nn.Module):
         attention = attention.transpose(1, 2).contiguous().view(B, T, C)
 
         out = self.proj_dropout(self.proj_net(attention))
-        return out
+        return out, normalized_weights
 
 
 class Block(nn.Module):
@@ -69,11 +69,12 @@ class Block(nn.Module):
 
     def forward(self, x):
         # Attention -> LayerNorm -> MLP -> LayerNorm
-        x = x + self.attention(x)
+        att_output, weights = self.attention(x)
+        x = x + att_output
         x = self.ln1(x)
         x = x + self.mlp(x)
         x = self.ln2(x)
-        return x
+        return x, weights
 
 
 class DecisionTransformer(nn.Module):
@@ -81,8 +82,8 @@ class DecisionTransformer(nn.Module):
                  discrete_actions=True, discrete_states=True):
         super().__init__()
 
-        self.state_dim = state_dim
-        self.act_dim = act_dim
+        self.state_dim = state_dim + 1  # +1 for masked states
+        self.act_dim = act_dim + 1  # +1 for masked actions
         self.h_dim = h_dim
 
         # transformer blocks
@@ -96,22 +97,22 @@ class DecisionTransformer(nn.Module):
         self.embed_rtg = torch.nn.Linear(1, h_dim)
 
         if discrete_states:
-            self.embed_state = nn.Embedding(state_dim, h_dim)
+            self.embed_state = nn.Embedding(self.state_dim, h_dim)
         else:
-            self.embed_state = torch.nn.Linear(state_dim, h_dim)
+            self.embed_state = torch.nn.Linear(self.state_dim, h_dim)
 
         if discrete_actions:
-            self.embed_action = nn.Embedding(act_dim, h_dim)
+            self.embed_action = nn.Embedding(self.act_dim, h_dim)
             use_action_tanh = False
         else:
-            self.embed_action = torch.nn.Linear(act_dim, h_dim)
+            self.embed_action = torch.nn.Linear(self.act_dim, h_dim)
             use_action_tanh = True
 
         # prediction heads
         self.predict_rtg = torch.nn.Linear(h_dim, 1)
-        self.predict_state = torch.nn.Linear(h_dim, state_dim)
+        self.predict_state = torch.nn.Linear(h_dim, self.state_dim)
         self.predict_action = torch.nn.Sequential(
-            *([nn.Linear(h_dim, act_dim)] + ([nn.Tanh()] if use_action_tanh else []))
+            *([nn.Linear(h_dim, self.act_dim)] + ([nn.Tanh()] if use_action_tanh else []))
         )
 
     def forward(self, timesteps, states, actions, returns_to_go):
@@ -145,21 +146,21 @@ class DecisionTransformer(nn.Module):
         h = self.embed_ln(h)  # layer norm
 
         # transformer and prediction
-        h = self.transformer(h)
+        h, weights = self.transformer(h)
 
         # get h reshaped such that its size = (B x 3 x T x H) and
         # h[:, 0, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t
         # h[:, 1, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t, s_t
         # h[:, 2, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t, s_t, a_t
         # we do this such that we can predict the next state, action and rtg given the current state, action and rtg
-        h = h.reshape(B, 3, T, self.h_dim)  #.permute(0, 2, 1, 3)  # [B, T, 3, H]
+        h = h.reshape(B, 3, T, self.h_dim) # [B, T, 3, H]
 
         # get predictions
         rtg_preds = self.predict_rtg(h[:, 2])  # predict next rtg given r, s, a
         state_preds = self.predict_state(h[:, 2])  # predict next state given r, s, a
         action_preds = self.predict_action(h[:, 1])  # predict next action given r, s
 
-        return state_preds, action_preds, rtg_preds
+        return state_preds, action_preds, rtg_preds, weights
 
 
 if __name__ == '__main__':
