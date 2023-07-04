@@ -6,6 +6,8 @@ import pygame
 
 import numpy as np
 import os
+from collections import deque
+
 
 UP = 0
 RIGHT = 1
@@ -95,6 +97,21 @@ class GridWorld(gym.Env):
             col = max(0, col - 1)
         new_state = row * self.n + col
         return new_state
+
+    def get_new_state(self, state, action):
+        row = state // self.n
+        col = state % self.n
+        if action == DOWN and (row + 1) * self.n + col not in self.walls:
+            row = min(row + 1, self.m - 1)
+        elif action == UP and (row - 1) * self.n + col not in self.walls:
+            row = max(0, row - 1)
+        elif action == RIGHT and row * self.n + col + 1 not in self.walls:
+            col = min(col + 1, self.n - 1)
+        elif action == LEFT and row * self.n + col - 1 not in self.walls:
+            col = max(0, col - 1)
+        new_state = row * self.n + col
+        return new_state
+
 
     def get_state_loc(self, state):
         row = state // self.n
@@ -209,6 +226,36 @@ class GridWorld(gym.Env):
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()
+
+    def get_neighbors_and_actions(self, state):
+        neighbors = []
+        row, col = self.get_state_loc(state)
+        for action in [UP, DOWN, LEFT, RIGHT]:
+            new_row, new_col = self.get_state_loc(self.get_new_state(state, action))
+            if (new_row, new_col) != (row, col):  # If the agent has moved, then it's a valid neighbor.
+                neighbors.append((new_row * self.n + new_col, action))
+        return neighbors
+
+    def bfs(self, start_state, goal_state):
+        visited = [False] * self.n_states
+        queue = deque([(start_state, [])])  # The queue holds tuples of (state, path).
+
+        while queue:
+            state, path = queue.popleft()
+
+            if state == goal_state:  # If we've reached the goal, return the path and actions to it.
+                return path  # We return the path only, as the action that reached the goal is already included in the path.
+
+            if not visited[state]:  # If the state has not been visited before.
+                visited[state] = True
+
+                for neighbor, action in self.get_neighbors_and_actions(state):
+                    if not visited[neighbor]:  # If the neighbor has not been visited, enqueue it with the path to it.
+                        new_path = path + [
+                            (state, action)]  # Add the current state and the action leading to the neighbor.
+                        queue.append((neighbor, new_path))
+
+        return None  # If there's no path to the goal, return None.
 
 
 if __name__ == '__main__':

@@ -1,5 +1,6 @@
 from environments.gridworld import GridWorld
 import random
+import numpy as np
 
 
 class AltTmaze(GridWorld):
@@ -75,7 +76,7 @@ def left_way_around(env, render=False):
     return states, action_seq, rewards, total_reward
 
 
-def collect_trajectories(env, num_trials, error_rate, render=False):
+def collect_trajectories_altmaze(env, num_trials, error_rate, render=False):
     """Collects simulated trajectories through the maze, alternating between left and right way around unless an error is made.
 
     Store trajectores in list of dictionaries with keys 'observations', 'actions', 'rewards', and values are numpy arrays.
@@ -107,42 +108,44 @@ def collect_trajectories(env, num_trials, error_rate, render=False):
     return trajectories
 
 
-if __name__ == '__main__':
-    from definitions import ROOT_FOLDER
-    import os
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import pickle
+class CuedTmaze(GridWorld):
+    def __init__(self, max_steps=200, **kwargs):
+        super().__init__(file_name='cued_t_maze', **kwargs)
+        self.max_steps = max_steps
 
-    n_epochs = 100
+        self.start_states = [48, 50]
+        self.rewarded_goal = None
+        self.unrewarded_goal = None
+        self.reset()
 
-    data_dir = os.path.join(ROOT_FOLDER, 'trajectories', 'Tmaze')
+    def reset(self, start_state=None):
+        self.done = False
+        if start_state is not None:
+            self.start = start_state
+        else:
+            self.start = random.choice(self.start_states)
+        self.state = self.start
+        if self.start == 48:
+            self.rewarded_goal = self.goals[0]
+            self.unrewarded_goal = self.goals[1]
+        elif self.start == 50:
+            self.rewarded_goal = self.goals[1]
+            self.unrewarded_goal = self.goals[0]
+        self.step_count = 0
+        return self.state
 
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-    fn = 'trajectories_alt_tmaze_{}.pkl'.format(n_epochs)
-
-    env = AltTmaze(render_mode='human')
-    env.reset()
-    #env.render()
-    error_rate = 0.2  # 20% chance of making an error
-    trajectories = collect_trajectories(env, n_epochs, error_rate, render=False)
-    env.close()
-
-    print('='*50)
-    print('Saved {} trajectories to {}'.format(n_epochs, os.path.join(data_dir, fn)))
-    print('Average reward: {}'.format(np.mean([np.sum(traj['rewards']) for traj in trajectories])))
-    print('='*50)
+    def get_reward(self, new_state):
+        if new_state in self.goals:
+            self.done = True
+            if new_state == self.rewarded_goal:
+                return 1 - 0.9 * (self.step_count / self.max_steps)
+            else:
+                return -1
+        elif new_state in self.bombs:
+            return self.bomb_reward
+        elif new_state == self.state:
+            return self.bump_reward
+        return self.move_reward
 
 
-    plt.hist([np.sum(traj['rewards']) for traj in trajectories])
-    plt.title('Histogram of total rewards')
-    plt.show()
 
-    plt.title('Histogram of trajectory lengths')
-    plt.hist([len(traj['rewards']) for traj in trajectories])
-    plt.show()
-
-    # save trajectories to pickle
-    with open(os.path.join(data_dir, fn), 'wb') as f:
-        pickle.dump(trajectories, f)
