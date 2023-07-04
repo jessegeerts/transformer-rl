@@ -73,7 +73,10 @@ class TrajectoryDataset(Dataset):
 
         if traj_len >= self.context_len:
             # sample random index to slice trajectory
-            si = np.random.randint(0, traj_len - self.context_len)
+            if traj_len == self.context_len:
+                si = 0
+            else:
+                si = np.random.randint(0, traj_len - self.context_len)
 
             states = torch.from_numpy(traj['observations'][si : si + self.context_len])
             actions = torch.from_numpy(traj['actions'][si : si + self.context_len])
