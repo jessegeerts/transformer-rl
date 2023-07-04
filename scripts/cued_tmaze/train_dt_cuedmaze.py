@@ -2,7 +2,7 @@ from prepare_trajectory_data import TrajectoryDataset
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch import nn
-from environments.mazes import AltTmaze
+from environments.mazes import CuedTmaze
 import torch
 import pickle
 from decision_transformer import DecisionTransformer
@@ -17,11 +17,11 @@ import wandb
 
 wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
 # Initialize wandb
-wandb.init(project="AlternatingTmaze", name="TransformerTmaze")
+wandb.init(project="AlternatingTmaze", name="TransformerCuedMaze")
 
 torch.manual_seed(2)
 
-traj_dir = os.path.join(ROOT_FOLDER, 'trajectories', 'Tmaze')
+traj_dir = os.path.join(ROOT_FOLDER, 'trajectories', 'CuedTmaze')
 
 torch.set_default_dtype(torch.float32)
 
@@ -32,7 +32,7 @@ n_updates_per_iter = 100
 # model hyperparameters
 n_blocks = 1
 embed_dim = 32
-context_len = 179
+context_len = 10
 n_heads = 4
 dropout_p = 0.1
 
@@ -43,19 +43,29 @@ wt_decay = 1e-4             # weight decay
 warmup_steps = 10000        # warmup steps for lr scheduler
 
 # eval hyperparameters
-rtg_target = 10.
+rtg_target = .9
 rtg_scale = 1.0
 num_eval_episodes = 10
 max_ep_len = 180
 render = False
 
-env = AltTmaze(render_mode='human')
+env = CuedTmaze(render_mode='human', terminal_reward=1.0, move_reward=0.0, bump_reward=0., bomb_reward=-1.0)
 
 # prepare data
 # load trajectories
-trajectories = pickle.load(open(os.path.join(traj_dir, 'trajectories_alt_tmaze_100.pkl'), 'rb'))
+trajectories = pickle.load(open(os.path.join(traj_dir, 'cued_tmaze_trajectories.pkl'), 'rb'))
 dataset = TrajectoryDataset(trajectories, context_len=context_len, rtg_scale=1.0)
 traj_data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=True)
+
+action_mask_value = env.n_actions
+state_mask_value = env.n_states
+
+
+def mask_data(data, mask_value, mask_percentage=0.1):
+    mask = torch.rand(data.shape) < mask_percentage
+    masked_data = data.masked_fill(mask, mask_value)
+    return masked_data
+
 
 data_iter = iter(traj_data_loader)
 # each item from data_iter is a list of the form:
@@ -97,6 +107,9 @@ log_rtg_losses = []
 
 for train_i in range(n_training_iters):
 
+    if train_i > 20:
+        print('hi')
+
     model.train()
     for _ in range(n_updates_per_iter):
         # sample a trajectory
@@ -115,28 +128,35 @@ for train_i in range(n_training_iters):
         returns_to_go = returns_to_go.type(torch.float32).unsqueeze(-1)  # B x T x 1
         traj_mask = traj_mask.type(torch.int32)  # B x T
 
-        action_target = torch.clone(actions).detach().to(torch.int64)  # B x T
-        state_target = torch.clone(states).detach().to(torch.int64)  # B x T x state_dim
+        # mask some data
+        masked_actions = mask_data(actions, action_mask_value)
+        masked_states = mask_data(states, state_mask_value)
 
-        state_preds, action_preds, return_preds = model.forward(
+        # create targets
+        action_target = torch.clone(masked_actions).detach().to(torch.int64)  # B x T
+        state_target = torch.clone(masked_states).detach().to(torch.int64)  # B x T x state_dim
+
+        # forward pass
+        state_preds, action_preds, return_preds, weights = model.forward(
             timesteps=timesteps,
-            states=states,
-            actions=actions,
+            states=masked_states,
+            actions=masked_actions,
             returns_to_go=returns_to_go
         )
 
         # calculate loss
         # only consider non-padded elements
-        def calculate_loss(predictions, targets, mask, loss_func, dim):
-            predictions = predictions.view(-1, dim)[mask.view(-1) > 0].squeeze()
-            targets = targets.view(-1)[mask.view(-1) > 0]
+        def calculate_loss(predictions, targets, mask, loss_func, dim, mask_value=np.nan):
+            valid = (mask.view(-1) > 0) & (targets.view(-1) != mask_value)
+            predictions = predictions.view(-1, dim)[valid].squeeze()
+            targets = targets.view(-1)[valid]
             loss = loss_func(predictions, targets)
             return loss
 
 
         # Now call it for each data set
-        action_loss = calculate_loss(action_preds, action_target, traj_mask, loss_func, act_dim)
-        state_loss = calculate_loss(state_preds, state_target, traj_mask, loss_func, state_dim)
+        action_loss = calculate_loss(action_preds, action_target, traj_mask, loss_func, act_dim+1, mask_value=action_mask_value)
+        state_loss = calculate_loss(state_preds, state_target, traj_mask, loss_func, state_dim+1, mask_value=state_mask_value)
         rtg_loss = calculate_loss(return_preds, returns_to_go.unsqueeze(-1), traj_mask, rtg_loss_func, 1)  # rtg has dimension 1
 
         loss = action_loss + state_loss + rtg_loss
@@ -194,10 +214,12 @@ plt.legend(['state', 'action', 'rtg'])
 plt.show()
 
 
-model_fn = 'TmazeTransformer_{}_{}_{}.pt'.format(
+model_fn = 'CuedTmazeTransformer_{}_{}_{}_{}head.pt'.format(
            datetime.now().month,
            datetime.now().day,
-           datetime.now().hour)
+           datetime.now().hour,
+           n_heads)
 torch.save(model.state_dict(), os.path.join(model_save_dir, model_fn))
 print("Saved model to {}".format(model_fn))
 print("=" * 60)
+

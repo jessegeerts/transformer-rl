@@ -31,6 +31,10 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 states = torch.zeros((eval_batch_size, max_ep_len, state_dim), dtype=torch.int32)
             rewards_to_go = torch.zeros((eval_batch_size, max_ep_len, 1), dtype=torch.float32)
 
+            # add same mask as used for training
+            states[:] = env.n_states
+            actions[:] = env.n_actions
+
             # init episode
             running_state = env.reset()
             # convert to one-hot
@@ -53,20 +57,20 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 rewards_to_go[0, t] = running_rtg
 
                 if t < context_len:
-                    _, act_preds, _ = model.forward(timesteps[:, :context_len],
+                    _, act_preds, _, _ = model.forward(timesteps[:, :context_len],
                                                     states[:, :context_len],
                                                     actions[:, :context_len],
                                                     rewards_to_go[:, :context_len])
                     act_preds = act_preds[0, t].detach()
                 else:
-                    _, act_preds, _ = model.forward(timesteps[:, t - context_len + 1:t + 1],
+                    _, act_preds, _, _ = model.forward(timesteps[:, t - context_len + 1:t + 1],
                                                     states[:, t - context_len + 1:t + 1],
                                                     actions[:, t - context_len + 1:t + 1],
                                                     rewards_to_go[:, t - context_len + 1:t + 1])
                     act_preds = act_preds[0, -1].detach()
 
-                softmax_act = torch.multinomial(act_preds.softmax(-1), 1).item()
-                act = torch.argmax(act_preds).item()  # TODO: why not use softmax?
+                softmax_act = torch.multinomial(act_preds[:-1].softmax(-1), 1).item()
+                act = torch.argmax(act_preds[:-1]).item()  # TODO: why not use softmax?
                 running_state, running_reward, done, _ = env.step(act)
 
                 if render:
