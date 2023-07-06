@@ -1,5 +1,6 @@
 import torch
 from torch.nn import functional as F
+import numpy as np
 
 
 def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_episodes=10, max_ep_len=1000,
@@ -20,7 +21,7 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
     model.eval()
 
     with torch.no_grad():
-
+        attention_weights = []
         for _ in range(num_eval_episodes):
 
             # zeros place holders
@@ -57,13 +58,13 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 rewards_to_go[0, t] = running_rtg
 
                 if t < context_len:
-                    _, act_preds, _, _ = model.forward(timesteps[:, :context_len],
+                    _, act_preds, _, all_weights = model.forward(timesteps[:, :context_len],
                                                     states[:, :context_len],
                                                     actions[:, :context_len],
                                                     rewards_to_go[:, :context_len])
                     act_preds = act_preds[0, t].detach()
                 else:
-                    _, act_preds, _, _ = model.forward(timesteps[:, t - context_len + 1:t + 1],
+                    _, act_preds, _, all_weights = model.forward(timesteps[:, t - context_len + 1:t + 1],
                                                     states[:, t - context_len + 1:t + 1],
                                                     actions[:, t - context_len + 1:t + 1],
                                                     rewards_to_go[:, t - context_len + 1:t + 1])
@@ -81,9 +82,15 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
                 total_reward += running_reward
 
                 if done:
+                    stacked_weights = torch.stack(all_weights, dim=0)
+                    # average over batches
+                    stacked_weights = torch.mean(stacked_weights, dim=1) # (num_layers, num_heads, seq_len, seq_len)
+                    # keep running average of attention weights at last time step
+                    attention_weights.append(stacked_weights.cpu().numpy())
                     break
 
     results['eval/avg_reward'] = total_reward / num_eval_episodes
     results['eval/avg_ep_len'] = total_timesteps / num_eval_episodes
+    results['eval/attention_weights'] = np.mean(attention_weights, axis=0)  # average over episodes
 
     return results
