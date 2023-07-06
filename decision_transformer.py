@@ -77,6 +77,19 @@ class Block(nn.Module):
         return x, weights
 
 
+class StackedBlocks(nn.Module):
+    def __init__(self, h_dim, max_T, n_heads, drop_p, num_blocks):
+        super().__init__()
+        self.blocks = nn.ModuleList([Block(h_dim, max_T, n_heads, drop_p) for _ in range(num_blocks)])
+
+    def forward(self, x):
+        all_weights = []
+        for block in self.blocks:
+            x, weights = block(x)
+            all_weights.append(weights)
+        return x, all_weights
+
+
 class DecisionTransformer(nn.Module):
     def __init__(self, state_dim, act_dim, n_blocks, h_dim, context_len, n_heads, drop_p, max_timestep=4096,
                  discrete_actions=True, discrete_states=True):
@@ -88,8 +101,9 @@ class DecisionTransformer(nn.Module):
 
         # transformer blocks
         input_seq_len = 3 * context_len  # 3 * context_len because we concatenate state, action, reward
-        blocks = [Block(h_dim, input_seq_len, n_heads, drop_p) for _ in range(n_blocks)]
-        self.transformer = nn.Sequential(*blocks)
+        # blocks = [Block(h_dim, input_seq_len, n_heads, drop_p) for _ in range(n_blocks)]
+        # self.transformer = nn.Sequential(*blocks)
+        self.transformer = StackedBlocks(h_dim, input_seq_len, n_heads, drop_p, n_blocks)
 
         # projection heads
         self.embed_ln = nn.LayerNorm(h_dim)
@@ -146,7 +160,7 @@ class DecisionTransformer(nn.Module):
         h = self.embed_ln(h)  # layer norm
 
         # transformer and prediction
-        h, weights = self.transformer(h)
+        h, all_weights = self.transformer(h)
 
         # get h reshaped such that its size = (B x 3 x T x H) and
         # h[:, 0, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t
@@ -160,7 +174,7 @@ class DecisionTransformer(nn.Module):
         state_preds = self.predict_state(h[:, 2])  # predict next state given r, s, a
         action_preds = self.predict_action(h[:, 1])  # predict next action given r, s
 
-        return state_preds, action_preds, rtg_preds, weights
+        return state_preds, action_preds, rtg_preds, all_weights
 
 
 if __name__ == '__main__':
