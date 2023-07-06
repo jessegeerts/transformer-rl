@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from utils import evaluate_on_env
+from logging_utils import log_attention_weights
 from definitions import model_save_dir, ROOT_FOLDER
 import os
 from datetime import datetime
@@ -106,10 +107,6 @@ log_state_losses = []
 log_rtg_losses = []
 
 for train_i in range(n_training_iters):
-
-    if train_i > 20:
-        print('hi')
-
     model.train()
     for _ in range(n_updates_per_iter):
         # sample a trajectory
@@ -190,6 +187,9 @@ for train_i in range(n_training_iters):
     mean_rtg_loss = np.mean(log_rtg_losses)
 
     eval_avg_rewards.append(eval_avg_reward)
+    wandb.log({"eval_avg_reward": eval_avg_reward})
+    # log attention weights
+    log_attention_weights(results['eval/attention_weights'], train_i)
 
     print('Training iteration: {}'.format(train_i))
     print('Mean action loss: {:.4f}'.format(mean_action_loss))
