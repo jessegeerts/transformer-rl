@@ -94,3 +94,21 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
     results['eval/attention_weights'] = np.mean(attention_weights, axis=0)  # average over episodes
 
     return results
+
+
+def per_token_loss(data_iter, model, context_len, env, n_examples, token_ids):
+    """Calculate per token loss for each example in the dataset, following the procedure in Olah et al. (2021).
+    Randomly sample a token from each example and calculate the loss for that token.
+
+    https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html#results-in-context-score
+    """
+    for timesteps, states, actions, returns_to_go, traj_mask in data_iter:
+        # randomly sample a token from each example
+        pass
+
+def calculate_loss(predictions, targets, mask, loss_func, dim, mask_value=np.nan):
+    valid = (mask.view(-1) > 0) & (targets.view(-1) != mask_value)
+    predictions = predictions.view(-1, dim)[valid].squeeze()
+    targets = targets.view(-1)[valid]
+    loss = loss_func(predictions, targets)
+    return loss

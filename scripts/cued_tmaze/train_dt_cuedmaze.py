@@ -1,6 +1,5 @@
 from prepare_trajectory_data import TrajectoryDataset
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 from torch import nn
 from environments.mazes import CuedTmaze
 import torch
@@ -9,7 +8,7 @@ from decision_transformer import DecisionTransformer
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils import evaluate_on_env
+from utils import evaluate_on_env, calculate_loss
 from logging_utils import log_attention_weights
 from definitions import model_save_dir, ROOT_FOLDER
 import os
@@ -143,17 +142,9 @@ for train_i in range(n_training_iters):
 
         # calculate loss
         # only consider non-padded elements
-        def calculate_loss(predictions, targets, mask, loss_func, dim, mask_value=np.nan):
-            valid = (mask.view(-1) > 0) & (targets.view(-1) != mask_value)
-            predictions = predictions.view(-1, dim)[valid].squeeze()
-            targets = targets.view(-1)[valid]
-            loss = loss_func(predictions, targets)
-            return loss
-
-
         # Now call it for each data set
-        action_loss = calculate_loss(action_preds, action_target, traj_mask, loss_func, act_dim+1, mask_value=action_mask_value)
-        state_loss = calculate_loss(state_preds, state_target, traj_mask, loss_func, state_dim+1, mask_value=state_mask_value)
+        action_loss = calculate_loss(action_preds, action_target, traj_mask, loss_func, act_dim + 1, mask_value=action_mask_value)
+        state_loss = calculate_loss(state_preds, state_target, traj_mask, loss_func, state_dim + 1, mask_value=state_mask_value)
         rtg_loss = calculate_loss(return_preds, returns_to_go.unsqueeze(-1), traj_mask, rtg_loss_func, 1)  # rtg has dimension 1
 
         loss = action_loss + state_loss + rtg_loss
