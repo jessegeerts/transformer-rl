@@ -32,7 +32,7 @@ class TrajectoryDataset(Dataset):
     timesteps, states, actions, returns_to_go, traj_mask = next(data_iter)
 
     """
-    def __init__(self, trajectories, context_len, rtg_scale):
+    def __init__(self, trajectories, context_len, rtg_scale, random_truncation=False):
         """
 
         :param trajectories: list of trajectories, each is a dict with keys 'observations', 'actions', 'reward'
@@ -41,6 +41,7 @@ class TrajectoryDataset(Dataset):
         """
         self.trajectories = trajectories
         self.context_len = context_len
+        self.random_truncation = random_truncation
 
         # calculate min len of trajectory, state mean and std
         # and reward-to-go for all trajectories
@@ -113,4 +114,21 @@ class TrajectoryDataset(Dataset):
             traj_mask = torch.cat([torch.ones(traj_len, dtype=torch.long),
                                    torch.zeros(padding_len, dtype=torch.long)],
                                   dim=0)
+
+        if self.random_truncation:
+            # sample a random subsequence of the trajectory
+            min_traj_len = 2
+            sample_len = np.random.randint(min_traj_len, len(timesteps)+1)
+            sample_len = 1
+            if sample_len == len(timesteps):
+                si = 0
+            else:
+                si = np.random.randint(0, traj_len - sample_len)
+            ei = si + sample_len
+
+            timesteps = timesteps[si:ei]
+            states = states[si:ei]
+            actions = actions[si:ei]
+            returns_to_go = returns_to_go[si:ei]
+            traj_mask = traj_mask[si:ei]
         return timesteps, states, actions, returns_to_go, traj_mask
