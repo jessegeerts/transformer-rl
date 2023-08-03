@@ -1,10 +1,13 @@
 import torch
 from torch.nn import functional as F
 import numpy as np
+import random
 
 
-def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_episodes=10, max_ep_len=1000,
-                    discrete=True, render=False):
+def evaluate_on_env_append(model, context_len, env, rtg_target, rtg_scale, num_eval_episodes=10, max_ep_len=1000, discrete=True, render=False):
+    """Evaluate a model on an environment.
+
+    """
     eval_batch_size = 1  # required for forward pass
 
     results = {}
@@ -14,7 +17,6 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
     state_dim = env.observation_space.n
 
     # same as timesteps used for training the transformer
-    # also, crashes if device is passed to arange()
     timesteps = torch.arange(start=0, end=max_ep_len, step=1)
     timesteps = timesteps.repeat(eval_batch_size, 1)
 
@@ -22,9 +24,8 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
 
     with torch.no_grad():
         attention_weights = []
-        for _ in range(num_eval_episodes):
+        for ep in range(num_eval_episodes):
 
-            # zeros place holders
             actions = torch.zeros((eval_batch_size, max_ep_len), dtype=torch.int32)
             if discrete:
                 states = torch.zeros((eval_batch_size, max_ep_len), dtype=torch.int32)
@@ -36,9 +37,8 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
             states[:] = env.n_states
             actions[:] = env.n_actions
 
-            # init episode
             running_state = env.reset()
-            # convert to one-hot
+
             running_reward = 0
             running_rtg = rtg_target / rtg_scale
 
@@ -46,52 +46,46 @@ def evaluate_on_env(model, context_len, env, rtg_target, rtg_scale, num_eval_epi
 
                 total_timesteps += 1
 
-                # add state in placeholder
                 if discrete:
                     states[0, t] = running_state
                 else:
-                    states[0, t] = F.one_hot(torch.tensor(running_state), num_classes=state_dim).to(
-                        torch.float32)  # running_state # torch.from_numpy(running_state)  # .to(device)
+                    states[0, t] = F.one_hot(torch.tensor(running_state), num_classes=state_dim).to(torch.float32)
 
-                # calcualate running rtg and add it in placeholder
                 running_rtg = running_rtg - (running_reward / rtg_scale)
                 rewards_to_go[0, t] = running_rtg
 
-                if t < context_len:
-                    _, act_preds, _, all_weights = model.forward(timesteps[:, :context_len],
-                                                    states[:, :context_len],
-                                                    actions[:, :context_len],
-                                                    rewards_to_go[:, :context_len])
-                    act_preds = act_preds[0, t].detach()
-                else:
-                    _, act_preds, _, all_weights = model.forward(timesteps[:, t - context_len + 1:t + 1],
-                                                    states[:, t - context_len + 1:t + 1],
-                                                    actions[:, t - context_len + 1:t + 1],
-                                                    rewards_to_go[:, t - context_len + 1:t + 1])
-                    act_preds = act_preds[0, -1].detach()
+                input_timesteps = timesteps[:, max(0, t - context_len + 1):t + 1]
+                input_states = states[:, max(0, t - context_len + 1):t + 1]
+                input_actions = actions[:, max(0, t - context_len + 1):t + 1]
+                input_rtg = rewards_to_go[:, max(0, t - context_len + 1):t + 1]
 
-                softmax_act = torch.multinomial(act_preds[:-1].softmax(-1), 1).item()
-                act = torch.argmax(act_preds[:-1]).item()  # TODO: why not use softmax?
+                st_preds, act_preds, rtg_preds, all_weights, mlp_activations = model.forward(input_timesteps,
+                                                                              input_states,
+                                                                              input_actions,
+                                                                              input_rtg)
+
+                act_preds = act_preds[0, min(t, context_len-1)].detach()  # Get the last action prediction
+
+                # softmax_act = torch.multinomial(act_preds[:-1].softmax(-1), 1).item()
+                act = torch.argmax(act_preds[:-1]).item()
                 running_state, running_reward, done, _ = env.step(act)
 
                 if render:
                     env.render()
-                # add action in placeholder
+
                 actions[0, t] = act
 
                 total_reward += running_reward
 
-                if done:
+                if done or t == max_ep_len - 1:
                     stacked_weights = torch.stack(all_weights, dim=0)
-                    # average over batches
-                    stacked_weights = torch.mean(stacked_weights, dim=1) # (num_layers, num_heads, seq_len, seq_len)
-                    # keep running average of attention weights at last time step
+                    stacked_weights = torch.mean(stacked_weights, dim=1)
                     attention_weights.append(stacked_weights.cpu().numpy())
                     break
 
     results['eval/avg_reward'] = total_reward / num_eval_episodes
     results['eval/avg_ep_len'] = total_timesteps / num_eval_episodes
-    results['eval/attention_weights'] = np.mean(attention_weights, axis=0)  # average over episodes
+    results['eval/attention_weights'] = np.mean(attention_weights, axis=0)
 
     return results
 
@@ -101,14 +95,41 @@ def per_token_loss(data_iter, model, context_len, env, n_examples, token_ids):
     Randomly sample a token from each example and calculate the loss for that token.
 
     https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html#results-in-context-score
+
+    TODO: implement this
     """
     for timesteps, states, actions, returns_to_go, traj_mask in data_iter:
         # randomly sample a token from each example
         pass
 
+
 def calculate_loss(predictions, targets, mask, loss_func, dim, mask_value=np.nan):
     valid = (mask.view(-1) > 0) & (targets.view(-1) != mask_value)
     predictions = predictions.view(-1, dim)[valid].squeeze()
     targets = targets.view(-1)[valid]
-    loss = loss_func(predictions, targets)
+    if len(targets) == 0:  # no valid targets, return 0 loss
+        return torch.tensor(0.0, requires_grad=True)
+    loss = loss_func(predictions, targets.squeeze())
     return loss
+
+
+def seed_everything(seed_value):
+    random.seed(seed_value)
+    np.random.seed(seed_value)
+    torch.manual_seed(seed_value)
+    torch.cuda.manual_seed_all(seed_value)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def post_process(state_preds, action_preds):
+    """Post process the logits to remove the dummy action and state"""
+    state_preds = state_preds[:, :, :-1]
+    action_preds = action_preds[:, :, :-1]
+    return state_preds, action_preds
+
+
+def mask_data(data, mask_value, mask_prob=0.1):
+    mask = torch.rand(data.shape) < mask_prob
+    masked_data = data.masked_fill(mask, mask_value)
+    return masked_data
