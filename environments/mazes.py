@@ -109,11 +109,14 @@ def collect_trajectories_altmaze(env, num_trials, error_rate, render=False):
 
 
 class CuedTmaze(GridWorld):
-    def __init__(self, max_steps=200, **kwargs):
-        super().__init__(file_name='cued_t_maze', **kwargs)
+    def __init__(self, max_steps=200, map_name='cued_t_maze', **kwargs):
+        super().__init__(file_name=map_name, **kwargs)
         self.max_steps = max_steps
-
-        self.start_states = [48, 50]
+        self.map_name = map_name
+        if map_name == 'cued_t_maze':
+            self.start_states = [48, 50]
+        elif map_name == 'cued_t_maze_2':
+            self.start_states = [46, 52]
         self.rewarded_goal = None
         self.unrewarded_goal = None
         self.reset()
@@ -125,12 +128,21 @@ class CuedTmaze(GridWorld):
         else:
             self.start = random.choice(self.start_states)
         self.state = self.start
-        if self.start == 48:
-            self.rewarded_goal = self.goals[0]
-            self.unrewarded_goal = self.goals[1]
-        elif self.start == 50:
-            self.rewarded_goal = self.goals[1]
-            self.unrewarded_goal = self.goals[0]
+        if self.map_name == 'cued_t_maze':
+            if self.start == 48:
+                self.rewarded_goal = self.goals[1]
+                self.unrewarded_goal = self.goals[0]
+            elif self.start == 50:
+                self.rewarded_goal = self.goals[0]
+                self.unrewarded_goal = self.goals[1]
+        elif self.map_name == 'cued_t_maze_2':
+            if self.start == 46:
+                self.rewarded_goal = self.goals[1]
+                self.unrewarded_goal = self.goals[0]
+            elif self.start == 52:
+                self.rewarded_goal = self.goals[0]
+                self.unrewarded_goal = self.goals[1]
+
         self.step_count = 0
         return self.state
 
