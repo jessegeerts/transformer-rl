@@ -9,7 +9,7 @@ from decision_transformer import DecisionTransformer
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils import evaluate_on_env
+from utils import evaluate_on_env, mask_data
 from definitions import model_save_dir, ROOT_FOLDER
 import os
 import wandb
@@ -85,16 +85,11 @@ def train():
         # prepare data
         # load trajectories
         trajectories = pickle.load(open(os.path.join(traj_dir, 'cued_tmaze_trajectories.pkl'), 'rb'))
-        dataset = TrajectoryDataset(trajectories, context_len=wandb.config.context_len, rtg_scale=1.0)
+        dataset = TrajectoryDataset(trajectories, context_len=wandb.config.context_len, rtg_scale=1.0, random_truncation=True)
         traj_data_loader = DataLoader(dataset, batch_size=wandb.config.batch_size, shuffle=False, pin_memory=True, drop_last=True)
 
         action_mask_value = env.n_actions
         state_mask_value = env.n_states
-
-        def mask_data(data, mask_value, mask_percentage=0.1):
-            mask = torch.rand(data.shape) < mask_percentage
-            masked_data = data.masked_fill(mask, mask_value)
-            return masked_data
 
         data_iter = iter(traj_data_loader)
         # each item from data_iter is a list of the form:
