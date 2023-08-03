@@ -15,6 +15,25 @@ DOWN = 2
 LEFT = 3
 
 
+# Define the four possible directions for the arrows
+UP_ARROW = np.array([0, -1])
+DOWN_ARROW = np.array([0, 1])
+LEFT_ARROW = np.array([-1, 0])
+RIGHT_ARROW = np.array([1, 0])
+ARROWS = [UP_ARROW, DOWN_ARROW, LEFT_ARROW, RIGHT_ARROW]
+
+# Function to draw arrow
+def draw_arrow(surface, color, pos, direction, scale):
+    arrow_size = np.array([0.2, 0.5]) * scale  # This defines the size of the arrow, adjusted for agent size
+    pos = np.array(pos)
+    points = [
+        pos + ((np.array([0.5, 0.5]) + direction * 0.5 - direction * arrow_size) * scale),
+        pos + ((np.array([0.5, 0.5]) + direction * 0.5 + direction * arrow_size) * scale),
+        pos + ((np.array([0.5, 0.5]) + direction * 0.5 + np.array([-1, 1]) * direction * arrow_size / 2) * scale),
+    ]
+    pygame.draw.polygon(surface, color, points)
+
+
 class GridWorld(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 8}
 
@@ -128,15 +147,15 @@ class GridWorld(gym.Env):
             return self.bump_reward
         return self.move_reward
 
-    def render(self):
+    def render(self, logits=None, t=None):
         if self.render_mode == "rgb_array":
-            return self._render_frame()
+            return self._render_frame(logits, t)
         elif self.render_mode == "human":
-            self._render_frame()
+            self._render_frame(logits, t)
             pygame.display.flip()
             self.clock.tick(self.metadata["render_fps"])
 
-    def _render_frame(self):
+    def _render_frame(self, logits=None, t=None):
         if self.window is None and self.render_mode == "human":
             pygame.init()
             pygame.display.init()
@@ -190,6 +209,34 @@ class GridWorld(gym.Env):
             pix_square_size / 3,
         )
 
+        if logits is not None:
+            # Where the agent's arrows should be drawn in the `_render_frame` function
+            # Now we draw the action indicators (as circles) in the squares adjacent to the agent
+            # Now we draw the action indicators (as circles) in the squares adjacent to the agent
+            for action in range(self.n_actions):
+                current_state_loc = self.get_state_loc(self.state)
+
+                if action == 0:  # Up
+                    new_state_loc = (current_state_loc[0], current_state_loc[1] - 1)
+                elif action == 1:  # Right
+                    new_state_loc = (current_state_loc[0] + 1, current_state_loc[1])
+                elif action == 2:  # Down
+                    new_state_loc = (current_state_loc[0], current_state_loc[1] + 1)
+                elif action == 3:  # Left
+                    new_state_loc = (current_state_loc[0] - 1, current_state_loc[1])
+
+                # Ensuring that the new state is within the grid
+                if new_state_loc[0] > self.m - 1 or new_state_loc[1] > self.n - 1:
+                    continue
+
+                # Color the circle based on the action
+                color = (logits[action]*255, 0, 0)  # use different colors for different actions as per your requirement
+                pygame.draw.circle(
+                    canvas,
+                    color,
+                    (np.array(new_state_loc) + 0.5) * pix_square_size,
+                    pix_square_size / 5,
+                )
         # Finally, add some gridlines
         for x in range(self.n + 1):
             pygame.draw.line(
@@ -207,6 +254,12 @@ class GridWorld(gym.Env):
                 (pix_square_size * x, self.n * pix_square_size),
                 width=3,
             )
+
+        if t is not None:
+            font = pygame.font.Font(None, 36)
+            text = font.render("Time: %d" % t, 1, (10, 10, 10))
+            textpos = text.get_rect(topright=(self.window_size - 20, 10))  # You can change the position as needed
+            canvas.blit(text, textpos)
 
         if self.render_mode == "human":
             # The following line copies our drawings from `canvas` to the visible window
