@@ -1,15 +1,28 @@
 """Simple implementation of causal decision transformer, based on Misha Laskin's implementation of GPT.
 """
 import math
+import numpy as np
 
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
 
+def sinusoidal_embeddings(n_pos, d_hid):
+    position = np.arange(n_pos)[:, np.newaxis]
+    div_term = np.exp(np.arange(0., d_hid, 2) * -(np.log(10000.0) / d_hid))
+    sinusoid_table = np.zeros_like(position * div_term, dtype= np.float32)
+    sinusoid_table[:, 0::2] = np.sin(position * div_term)
+    sinusoid_table[:, 1::2] = np.cos(position * div_term)
+    return torch.tensor(sinusoid_table)
+
+
 class CausalMultiheadAttention(nn.Module):
     """Multihead attention with causal mask."""
     def __init__(self, h_dim, max_T, num_heads, dropout=0.1):
+        """
+        max_T: maximum sequence length (3 * context_len because we concatenate state, action, reward)
+        """
         super().__init__()
 
         self.num_heads = num_heads
@@ -22,10 +35,30 @@ class CausalMultiheadAttention(nn.Module):
         self.att_dropout = nn.Dropout(dropout)
         self.proj_dropout = nn.Dropout(dropout)
 
-        # apply causal mask (upper triangular matrix)
+        # apply causal mask
+        mask = self.causal_mask(max_T)
+        self.register_buffer("mask", mask)
+
+    def causal_mask(self, max_T):
+        return self.block_causal_mask(max_T)
+
+    @staticmethod
+    def standard_causal_mask(max_T):
+        """Standard causal mask.
+        """
         ones = torch.ones((max_T, max_T))
         mask = torch.tril(ones).view(1, 1, max_T, max_T)
-        self.register_buffer("mask", mask)
+        return mask
+
+    @staticmethod
+    def block_causal_mask(max_T):
+        """Causal mask with blocks of size 3 (model can attend to current rtg, s, a).
+        """
+        blocks = torch.kron(torch.eye(max_T//3), torch.ones((3, 3))).view(1, 1, max_T, max_T)
+        tril = torch.tril(torch.ones((max_T, max_T))).view(1, 1, max_T, max_T)
+        mask = torch.logical_or(blocks, tril).double()
+        return mask
+
 
     def forward(self, x):
         B, T, C = x.shape  # batch size, sequence length, h_dim * n_heads
@@ -55,55 +88,63 @@ class CausalMultiheadAttention(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, h_dim, max_T, n_heads, drop_p):
+    def __init__(self, h_dim, max_T, n_heads, drop_p, act_fn=nn.GELU()):
         super().__init__()
         self.attention = CausalMultiheadAttention(h_dim, max_T, n_heads, drop_p)
-        self. mlp = nn.Sequential(
-            nn.Linear(h_dim, h_dim * 4),
-            nn.GELU(),
+
+        # Split MLP into two parts to capture activations after the first layer
+        self.mlp1 = nn.Sequential(
+            nn.Linear(h_dim, h_dim * 4),  # note, the dimensionality of the MLP is 4x the hidden dimension
+            act_fn
+        )
+        self.mlp2 = nn.Sequential(
             nn.Linear(h_dim * 4, h_dim),
             nn.Dropout(drop_p)
         )
+
         self.ln1 = nn.LayerNorm(h_dim)
         self.ln2 = nn.LayerNorm(h_dim)
 
     def forward(self, x):
-        # Attention -> LayerNorm -> MLP -> LayerNorm
         att_output, weights = self.attention(x)
         x = x + att_output
         x = self.ln1(x)
-        x = x + self.mlp(x)
+        mlp_activations = self.mlp1(x)  # Capture the MLP activations after the first layer
+        x = x + self.mlp2(mlp_activations)
         x = self.ln2(x)
-        return x, weights
+        return x, weights, mlp_activations  # Return the activations after the first layer
 
 
 class StackedBlocks(nn.Module):
-    def __init__(self, h_dim, max_T, n_heads, drop_p, num_blocks):
+    def __init__(self, h_dim, max_T, n_heads, drop_p, num_blocks, act_fn=nn.GELU()):
         super().__init__()
-        self.blocks = nn.ModuleList([Block(h_dim, max_T, n_heads, drop_p) for _ in range(num_blocks)])
+        self.blocks = nn.ModuleList([Block(h_dim, max_T, n_heads, drop_p, act_fn=act_fn) for _ in range(num_blocks)])
 
     def forward(self, x):
         all_weights = []
+        all_mlp_activations = []
         for block in self.blocks:
-            x, weights = block(x)
+            x, weights, mlp_activations = block(x)
             all_weights.append(weights)
-        return x, all_weights
+            all_mlp_activations.append(mlp_activations)
+        return x, all_weights, all_mlp_activations  # Return MLP activations for each layer
 
 
 class DecisionTransformer(nn.Module):
     def __init__(self, state_dim, act_dim, n_blocks, h_dim, context_len, n_heads, drop_p, max_timestep=4096,
-                 discrete_actions=True, discrete_states=True):
+                 discrete_actions=True, discrete_states=True, act_fn=nn.GELU(),
+                 action_mask_value=None, state_mask_value=None):
         super().__init__()
 
         self.state_dim = state_dim + 1  # +1 for masked states
         self.act_dim = act_dim + 1  # +1 for masked actions
         self.h_dim = h_dim
+        self.action_mask_value = action_mask_value
+        self.state_mask_value = state_mask_value
 
         # transformer blocks
         input_seq_len = 3 * context_len  # 3 * context_len because we concatenate state, action, reward
-        # blocks = [Block(h_dim, input_seq_len, n_heads, drop_p) for _ in range(n_blocks)]
-        # self.transformer = nn.Sequential(*blocks)
-        self.transformer = StackedBlocks(h_dim, input_seq_len, n_heads, drop_p, n_blocks)
+        self.transformer = StackedBlocks(h_dim, input_seq_len, n_heads, drop_p, n_blocks, act_fn=act_fn)
 
         # projection heads
         self.embed_ln = nn.LayerNorm(h_dim)
@@ -149,6 +190,12 @@ class DecisionTransformer(nn.Module):
         # they are added to the input embeddings
         state_embeddings = self.embed_state(states) + time_embeddings  # [B, T, H]
         action_embeddings = self.embed_action(actions) + time_embeddings  # [B, T, H]
+        if self.state_mask_value is not None:
+            mask_state = states == self.action_mask_value
+            state_embeddings[mask_state] = 0
+        if self.action_mask_value is not None:
+            mask_action = actions == self.state_mask_value
+            action_embeddings[mask_action] = 0
         rtg_embeddings = self.embed_rtg(returns_to_go) + time_embeddings  # [B, T, H]
 
         # stack rtg, states and actions and reshape sequence as
@@ -160,32 +207,19 @@ class DecisionTransformer(nn.Module):
         h = self.embed_ln(h)  # layer norm
 
         # transformer and prediction
-        h, all_weights = self.transformer(h)
+        h, all_weights, all_mlp_activations = self.transformer(h)
 
         # get h reshaped such that its size = (B x 3 x T x H) and
         # h[:, 0, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t
         # h[:, 1, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t, s_t
         # h[:, 2, t] is conditioned on the input sequence r_0, s_0, a_0 ... r_t, s_t, a_t
         # we do this such that we can predict the next state, action and rtg given the current state, action and rtg
-        h = h.reshape(B, 3, T, self.h_dim) # [B, T, 3, H]
+        h = h.reshape(B, 3, T, self.h_dim)  # [B, T, 3, H]
 
         # get predictions
         rtg_preds = self.predict_rtg(h[:, 2])  # predict next rtg given r, s, a
         state_preds = self.predict_state(h[:, 2])  # predict next state given r, s, a
         action_preds = self.predict_action(h[:, 1])  # predict next action given r, s
 
-        return state_preds, action_preds, rtg_preds, all_weights
+        return state_preds, action_preds, rtg_preds, all_weights, all_mlp_activations
 
-
-if __name__ == '__main__':
-    from environments.gridworld import GridWorld
-
-    env = GridWorld()
-    # collect random walk trajectories from grid world environment
-
-
-
-
-
-    dt = DecisionTransformer(3, 2, 2, 32, 10, 4, 0.1)
-    print(dt)
