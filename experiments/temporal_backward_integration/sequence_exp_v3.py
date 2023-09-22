@@ -30,9 +30,6 @@ config = TransformerConfig(pos_embedding_type='learned',
 
 seed_everything(config.seed)
 
-if config.log_to_wandb:
-    wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
-
 
 # Define stimuli using one-hot encoding
 S1 = torch.Tensor([1, 0, 0, 0])

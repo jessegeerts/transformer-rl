@@ -2,7 +2,16 @@
 
 implementation of Decision Transformer on several gridworld environments. This repo is intended to study DT's long-term credit assignment capabilities
 
+
 [google slides here](https://docs.google.com/presentation/d/1anx2zA1wDQEJZZIEtkFkZA1_X2KHBP3_wz2orBta1eA/edit#slide=id.g27d7f62ef57_0_11)
+
+## Setup
+
+After cloning the repo, run the following to install dependencies.
+
+```
+pip install -r requirements.txt
+```
 
 ## Sequence experiment
 For the sequence experiment with temporal backward integration: go to `experiments/temporal_backward_integration/sequence_exp_v3.py`
