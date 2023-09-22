@@ -10,7 +10,7 @@ For the sequence experiment with temporal backward integration: go to `experimen
 to run this from terminal, go to the root of the project and run:
 
 ```
-pyhon -m experiments.temporal_backward_integration.sequence_exp_v3
+python -m experiments.temporal_backward_integration.sequence_exp_v3
 ```
 
 Current state of the code:
