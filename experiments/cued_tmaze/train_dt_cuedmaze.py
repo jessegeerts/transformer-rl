@@ -37,8 +37,8 @@ seed_everything(config.seed)
 traj_dir = os.path.join(ROOT_FOLDER, 'trajectories', 'CuedTmaze')
 torch.set_default_dtype(torch.float32)
 
-env = CuedTmaze(render_mode='human', terminal_reward=1.0, move_reward=0.0, bump_reward=0., bomb_reward=-1.0,
-                map_name=map_name)
+env = CuedTmaze(render_mode='human', file_name='cued_t_maze', terminal_reward=1.0, move_reward=0.0, bump_reward=0.,
+                bomb_reward=-1.0, map_name=map_name)
 
 # prepare data
 # load trajectories

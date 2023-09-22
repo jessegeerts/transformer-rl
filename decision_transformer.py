@@ -59,7 +59,6 @@ class CausalMultiheadAttention(nn.Module):
         mask = torch.logical_or(blocks, tril).double()
         return mask
 
-
     def forward(self, x):
         B, T, C = x.shape  # batch size, sequence length, h_dim * n_heads
 

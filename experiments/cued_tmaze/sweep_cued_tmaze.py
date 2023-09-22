@@ -79,7 +79,6 @@ env = CuedTmaze(render_mode='human', terminal_reward=1.0, move_reward=0.0, bump_
 # train decision transformer
 
 def train():
-    # Your existing code, but with all hyperparameters replaced with a call to wandb.config, e.g.:
 
     with wandb.init() as run:
         # prepare data

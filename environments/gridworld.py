@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium import error, spaces, utils
 from gymnasium.utils import seeding
 import pygame
-#from gym.envs.classic_control.rendering import SimpleImageViewer
+import random
 
 import numpy as np
 import os
@@ -22,6 +22,7 @@ LEFT_ARROW = np.array([-1, 0])
 RIGHT_ARROW = np.array([1, 0])
 ARROWS = [UP_ARROW, DOWN_ARROW, LEFT_ARROW, RIGHT_ARROW]
 
+
 # Function to draw arrow
 def draw_arrow(surface, color, pos, direction, scale):
     arrow_size = np.array([0.2, 0.5]) * scale  # This defines the size of the arrow, adjusted for agent size
@@ -37,14 +38,41 @@ def draw_arrow(surface, color, pos, direction, scale):
 class GridWorld(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 8}
 
-    def __init__(self, file_name="map3.txt", fail_rate=0.0, terminal_reward=1.0, move_reward=0.0, bump_reward=-0.5,
-                 bomb_reward=-1.0, max_steps=1000, render_mode=None):
+    def __init__(self, random_walls=0, file_name=None, fail_rate=0.0, terminal_reward=1.0, move_reward=0.0, bump_reward=-0.5,
+                 bomb_reward=-1.0, max_steps=1000, render_mode=None, min_distance=2):
         self.n = None
         self.m = None
         self.bombs = []
         self.walls = []
         self.goals = []
         self.start = None
+        self.random_walls = random_walls
+        self.min_distance = min_distance
+        if file_name:
+            self.load_from_file(file_name)
+            self.n_states = self.n * self.m
+        else:
+            self.generate_empty_map()
+        self.n_actions = 4
+        self.fail_rate = fail_rate
+        self.state = self.start
+        self.terminal_reward = terminal_reward
+        self.move_reward = move_reward
+        self.bump_reward = bump_reward
+        self.bomb_reward = bomb_reward
+        self.action_space = spaces.Discrete(4)
+        self.observation_space = spaces.Discrete(self.n_states)
+        self.done = False
+        self.max_steps = max_steps
+        self.step_count = 0
+
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        self.window_size = 512  # The size of the PyGame window
+        self.render_mode = render_mode
+        self.window = None  # will be a reference to the window that we draw to.
+        self.clock = None  # used to ensure that the environment is rendered at the correct framerate in human-mode.
+
+    def load_from_file(self, file_name):
         this_file_path = os.path.dirname(os.path.realpath(__file__))
         file_name = os.path.join(this_file_path, file_name)
         with open(file_name, "r") as f:
@@ -67,25 +95,25 @@ class GridWorld(gym.Env):
             self.m = i + 1
         if len(self.goals) == 0:
             raise ValueError("At least one goal needs to be specified...")
-        self.n_states = self.n * self.m
-        self.n_actions = 4
-        self.fail_rate = fail_rate
-        self.state = self.start
-        self.terminal_reward = terminal_reward
-        self.move_reward = move_reward
-        self.bump_reward = bump_reward
-        self.bomb_reward = bomb_reward
-        self.action_space = spaces.Discrete(4)
-        self.observation_space = spaces.Discrete(self.n_states)
-        self.done = False
-        self.max_steps = max_steps
-        self.step_count = 0
 
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
-        self.window_size = 512  # The size of the PyGame window
-        self.render_mode = render_mode
-        self.window = None  # will be a reference to the window that we draw to.
-        self.clock = None  # used to ensure that the environment is rendered at the correct framerate in human-mode.
+    def generate_empty_map(self, n=5, m=5):
+        self.n = n
+        self.m = m
+        self.n_states = self.n * self.m
+
+        # Define the starting position
+        self.start = random.randint(0, self.n_states - 1)
+
+        while True:
+            goal = random.choice([x for x in range(self.n * self.m) if x != self.start])
+            if self.manhattan_distance(self.start, goal) >= self.min_distance:
+                self.goals.append(goal)
+                break
+
+    def manhattan_distance(self, pos1, pos2):
+        x1, y1 = pos1 // self.m, pos1 % self.m
+        x2, y2 = pos2 // self.m, pos2 % self.m
+        return abs(x1 - x2) + abs(y1 - y2)
 
     def step(self, action):
         assert self.action_space.contains(action)
@@ -311,11 +339,36 @@ class GridWorld(gym.Env):
         return None  # If there's no path to the goal, return None.
 
 
+class ProcGenGrid(GridWorld):
+    def __init__(self, n=5, m=5, num_walls=5, fail_rate=0.0, terminal_reward=1.0, move_reward=0.0,
+                 bump_reward=-0.5, bomb_reward=-1.0, max_steps=1000, render_mode=None, min_distance=2):
+        super().__init__(fail_rate=fail_rate, terminal_reward=terminal_reward, move_reward=move_reward,
+                         bump_reward=bump_reward, bomb_reward=bomb_reward, max_steps=max_steps, render_mode=render_mode,
+                         min_distance=min_distance)
+
+        self.n = n
+        self.m = m
+        self.walls = []
+        self.bombs = []
+        self.goals = []
+        self.generate_empty_map(n, m)
+
+        # Placing walls randomly, while ensuring there's still a path from start to goal
+        available_positions = [x for x in range(self.n * self.m) if x != self.start and x not in self.goals]
+        random.shuffle(available_positions)
+
+        walls_added = 0
+        for pos in available_positions:
+            self.walls.append(pos)
+            if self.bfs(self.start, self.goals[0]) is None:  # Check if there's a path from start to goal
+                self.walls.pop()  # If not, remove the wall
+            else:
+                walls_added += 1
+                if walls_added >= num_walls:
+                    break
+
+
 if __name__ == '__main__':
-    env = GridWorld(terminal_reward=1.0, move_reward=0.0, render_mode='human', file_name='map4.txt')
-    env.reset()
-    while not env.done:
-        env.render()
-        action = env.action_space.sample()
-        state, reward, done, _ = env.step(action)
-        print(state, reward, done)
+    env = ProcGenGrid(n=10, m=10, num_walls=20, render_mode='human', min_distance=5)
+    env.render()
+    env.close()
