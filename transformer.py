@@ -121,7 +121,7 @@ class Transformer(nn.Module):
 
         # embed input tokens and positions
         self.proj_token = nn.Embedding(token_dim, h_dim)
-        self.proj_onehot = nn.Linear(token_dim, h_dim)
+        self.proj_stim = nn.Linear(token_dim, h_dim)
 
         # parameter = trainable weight matrix
         init_param_vals = torch.randn(1, max_T, h_dim) / math.sqrt(h_dim)
