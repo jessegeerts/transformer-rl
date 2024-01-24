@@ -163,7 +163,7 @@ class Transformer(nn.Module):
         B, T, C = x.shape
 
         # token and pos embedding
-        token_h = self.proj_onehot(x)
+        token_h = self.proj_stim(x)
         # pos embedding
         if pos_embedding_type == 'sinusoidal':
             pos_h = self.sinusoidal[:, start_time:start_time + T, :]
