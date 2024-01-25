@@ -11,7 +11,7 @@ from experiments.rules_vs_exemplars.transformer_classification import CustomLRSc
 
 def run_experiment(config, n_epochs, alpha, epsilon, K, B):
     if config.log_to_wandb:
-        wandb.init(project="RulesExemplars", name='iwl-icl-tradeoff-B{}-K{}')
+        wandb.init(project="RulesExemplars", name='iwl-icl-tradeoff-B{}-K{}'.format(B, K))
 
     # data preparation
     # ----------------------------------
