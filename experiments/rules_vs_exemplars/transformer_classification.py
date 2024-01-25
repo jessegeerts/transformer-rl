@@ -88,7 +88,7 @@ class TransformerClassifier(Transformer):
         h = h[:, interleave_indices, :].view(B, -1, D)
         h = torch.cat([h, stimuli[:, -1, :].unsqueeze(1)], dim=1)  # Add the query stimulus at the end
         # h += pos_embeddings.unsqueeze(0)
-        h = torch.cat([h, pos_embeddings.unsqueeze(0)], dim=-1)
+        h = torch.cat([h, pos_embeddings.unsqueeze(0).expand(B, seq_len, self.P)], dim=-1)
         # Transformer and prediction
         h = self.ln(self.transformer(h))
         pred = self.proj_head(h)

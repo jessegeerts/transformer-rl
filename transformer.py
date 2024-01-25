@@ -126,7 +126,7 @@ class Transformer(nn.Module):
         # parameter = trainable weight matrix
         init_param_vals = torch.randn(1, max_T, h_dim) / math.sqrt(h_dim)
         self.position_embedding = nn.Parameter(init_param_vals)
-        self.sinusoidal = sinusoidal_embeddings(max_T, h_dim).unsqueeze(0)
+        #self.sinusoidal = sinusoidal_embeddings(max_T, h_dim).unsqueeze(0)
 
         self.embed_timesteps = nn.Embedding(max_T, h_dim)
 

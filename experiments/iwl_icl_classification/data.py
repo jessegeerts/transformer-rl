@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 
 class BurstyTrainingDataset(Dataset):
@@ -11,15 +11,15 @@ class BurstyTrainingDataset(Dataset):
     the label of the query stimulus.
     """
     P = 65  # dimension of position embeddings
-    L = 32  # number of labels
     N = 8  # number of stimuli in a sequence
-    epsilon = 0.1  # within class noise
 
-    def __init__(self, size=1000, K=128, B=4, alpha=1.0, D=63, Pb=1.):
+    def __init__(self, size=1024, K=128, B=4, alpha=1.0, D=63, Pb=1., L=32, epsilon=0.1):
         self.size = size
         self.K = K  # number of classes
         self.B = B  # burstiness of sequences
         self.D = D  # dimension of stimuli
+        self.L = L
+        self.epsilon = epsilon  # magnitude of within-class noise
         self.alpha = alpha  # zipf parameter
         self.Pb = Pb  # proportion of bursty sequences
         self.class_means = np.random.normal(0, 1/self.D, (K, self.D))  # Mean vectors for each class (note: could change this to the chan et al. means)
@@ -42,7 +42,7 @@ class BurstyTrainingDataset(Dataset):
         else:
             raise ValueError("Invalid mode. Mode should be 'train' or 'eval'.")
 
-        return torch.tensor(sequence, dtype=torch.float32), torch.tensor(labels, dtype=torch.long)
+        return torch.tensor(np.array(sequence), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.long)
 
     def generate_training_sequence(self):
         # first, determine whether the sequence is bursty or not
@@ -68,7 +68,7 @@ class BurstyTrainingDataset(Dataset):
             labels.append(y)
             classes.append(k)
         # append the query stimulus
-        k = np.random.choice(classes)
+        k = np.random.randint(self.K+1)
         x, y = self.sample_item(k)
         sequence.append(x)
         labels.append(y)
@@ -83,18 +83,27 @@ class BurstyTrainingDataset(Dataset):
         """
         sequence = []
         labels = []
-        n_classes = self.N // self.B  # number of classes in the sequence
-        classes = [self.sample_class() for _ in range(n_classes)]  # choose the classes fixme: this should be sampled from the zipf distribution
-        classes = np.repeat(classes, self.B)  # repeat each class B times
-        classes = classes[np.random.permutation(self.N)]  # randomly permute the order of the classes
+        if self.B == 0:  # if B = 0, then the sequence is IID, and the query stimulus is sampled from the same distribution
+            n_classes = self.N
+        else:
+            n_classes = self.N // self.B  # number of classes in the sequence
+        context_classes = [self.sample_class() for _ in range(n_classes)]  # choose the classes fixme: this should be sampled from the zipf distribution
+        if self.B > 0:
+            context_classes = np.repeat(context_classes, self.B)  # repeat each class B times
+        else:
+            context_classes = np.array(context_classes)
+        context_classes = context_classes[np.random.permutation(self.N)]  # randomly permute the order of the classes
 
-        for k in classes:
+        for k in context_classes:
             x, y = self.sample_item(k)
             sequence.append(x)
             labels.append(y)
 
         # append the query stimulus
-        k = np.random.choice(classes)
+        if self.B == 0:
+            k = np.random.randint(self.K)
+        else:  # for bursty sequences, the query stimulus is in the context
+            k = np.random.choice(context_classes)
         x, y = self.sample_item(k)
         sequence.append(x)
         labels.append(y)
@@ -130,12 +139,18 @@ class BurstyTrainingDataset(Dataset):
         """
         In ICL evaluation, we draw completely new classes which are assigned to existing labels.
         """
-        n_classes = self.N // self.B  # number of classes in the sequence = sequence length / burstiness
+        if self.B == 0:
+            n_classes = self.N
+        else:
+            n_classes = self.N // self.B  # number of classes in the sequence = sequence length / burstiness
         class_means = np.random.normal(0, 1 / self.D, (n_classes, self.D))
         class_labels = np.random.choice(self.L, size=n_classes)  # assign random labels to the classes
         sequence = []
         labels = []
-        classes = np.arange(n_classes).repeat(self.B)
+        if self.B > 0:
+            classes = np.arange(n_classes).repeat(self.B)
+        else:
+            classes = np.arange(n_classes)
         classes = classes[np.random.permutation(self.N)]  # randomly permute the order of the classes
 
         for k in classes:
@@ -187,3 +202,60 @@ if __name__ == '__main__':
 
     dataset = BurstyTrainingDataset(K=2 ** 4, D=2)
     sequence, labels = dataset.generate_training_sequence()
+
+    plt.figure()
+    plt.scatter(*np.array(sequence).T, c=labels)
+    plt.scatter(*np.array(sequence[-1]).T, c='r', marker='x')
+    plt.title('Bursty sequence')
+
+    # ---------------------------------
+    # iid sequence example
+    dataset = BurstyTrainingDataset(K=2 ** 4, D=2, Pb=0.0)
+    sequence, labels = dataset.generate_training_sequence()
+
+    plt.figure()
+    plt.scatter(*np.array(sequence).T, c=labels)
+    plt.scatter(*np.array(sequence[-1]).T, c='r', marker='x')
+    plt.title('IID sequence')
+
+    # ---------------------------------
+    # IWL evaluation sequence example
+    dataset = BurstyTrainingDataset(K=2 ** 4, D=2, Pb=1.0)
+    dataset.set_mode('eval_iwl')
+    sequence, labels = dataset.generate_training_sequence()
+
+    plt.figure()
+    plt.scatter(*np.array(sequence).T, c=labels)
+    plt.scatter(*np.array(sequence[-1]).T, c='r', marker='x')
+    plt.title('IWL evaluation sequence')
+
+    # ---------------------------------
+    # ICL evaluation sequence example
+    dataset = BurstyTrainingDataset(K=2 ** 4, D=2, Pb=1.0)
+    dataset.set_mode('eval_icl')
+    sequence, labels = dataset.generate_training_sequence()
+
+    plt.figure()
+    plt.scatter(*np.array(sequence).T, c=labels)
+    plt.scatter(*np.array(sequence[-1]).T, c='r', marker='x')
+    plt.title('ICL evaluation sequence')
+
+    # ---------------------------------
+    # check that dataloader works
+
+    loader = DataLoader(dataset, batch_size=4, shuffle=True)
+    for x, y in loader:
+        print(x.shape)
+        print(y.shape)
+        break
+
+    # then switch mode
+    dataset.set_mode('eval_icl')
+    eval_loader = DataLoader(dataset, batch_size=4, shuffle=True)
+    for x, y in eval_loader:
+        print(x.shape)
+        print(y.shape)
+        break
+
+    # ---------------------------------
+    # TODO: check that magnitude of stimuli = 1
