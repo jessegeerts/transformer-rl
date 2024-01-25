@@ -3,10 +3,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-# μk = np.random.normal(0, 1/D, (K, D))  # Mean vectors for each class
-
-
-class BurstyDataset(Dataset):
+class BurstyTrainingDataset(Dataset):
     """Custom dataset for testing ICL and IWL strategies (as described in Reddy et al., 2023).
 
     The dataset consists of sequences of stimuli and labels, where each stimulus is a D-dimensional vector. Each
@@ -27,12 +24,24 @@ class BurstyDataset(Dataset):
         self.Pb = Pb  # proportion of bursty sequences
         self.class_means = np.random.normal(0, 1/self.D, (K, self.D))  # Mean vectors for each class (note: could change this to the chan et al. means)
         self.class_labels = np.random.choice(self.L, size=K)  # Labels for each class
+        self.mode = 'train'
 
     def __len__(self):
         return self.size
 
+    def set_mode(self, mode):
+        self.mode = mode
+
     def __getitem__(self, idx):
-        sequence, labels = self.generate_training_sequence()
+        if self.mode == 'train':
+            sequence, labels = self.generate_training_sequence()
+        elif self.mode == 'eval_iwl':
+            sequence, labels = self.generate_eval_sequence_iwl()
+        elif self.mode == 'eval_icl':
+            sequence, labels = self.generate_eval_sequence_icl()
+        else:
+            raise ValueError("Invalid mode. Mode should be 'train' or 'eval'.")
+
         return torch.tensor(sequence, dtype=torch.float32), torch.tensor(labels, dtype=torch.long)
 
     def generate_training_sequence(self):
@@ -142,7 +151,7 @@ class BurstyDataset(Dataset):
         sequence.append(x)
         labels.append(y)
         return sequence, labels
-        
+
     def sample_item(self, k):
         x = self.class_means[k] + self.epsilon * np.random.normal(0, 1/self.D, self.D)
         y = self.class_labels[k]
@@ -164,7 +173,7 @@ if __name__ == '__main__':
     # example with D = 2, K = 2**4 classes
     xx = []
     yy = []
-    dataset = BurstyDataset(K=2**4, D=2)
+    dataset = BurstyTrainingDataset(K=2 ** 4, D=2)
     for k in range(dataset.K):
         for i in range(20):
             x, y = dataset.sample_item(k)
@@ -176,5 +185,5 @@ if __name__ == '__main__':
     # ---------------------------------
     # bursty sequence example
 
-    dataset = BurstyDataset(K=2**4, D=2)
+    dataset = BurstyTrainingDataset(K=2 ** 4, D=2)
     sequence, labels = dataset.generate_training_sequence()
