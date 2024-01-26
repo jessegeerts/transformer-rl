@@ -90,6 +90,7 @@ def run_experiment(config, n_epochs, alpha, epsilon, K, B):
                     wandb.log({'test_accuracy': test_accuracy.item()})
                 break
 
+    wandb.finish()
     return icl_accuracy, iwl_accuracy, test_accuracy
 
 

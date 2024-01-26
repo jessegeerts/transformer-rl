@@ -22,7 +22,8 @@ class BurstyTrainingDataset(Dataset):
         self.epsilon = epsilon  # magnitude of within-class noise
         self.alpha = alpha  # zipf parameter
         self.Pb = Pb  # proportion of bursty sequences
-        self.class_means = np.random.normal(0, 1/self.D, (K, self.D))  # Mean vectors for each class (note: could change this to the chan et al. means)
+        self.class_means = np.random.normal(0, 1 / self.D, (
+        K, self.D))  # Mean vectors for each class (note: could change this to the chan et al. means)
         self.class_labels = np.random.choice(self.L, size=K)  # Labels for each class
         self.mode = 'train'
 
@@ -45,6 +46,7 @@ class BurstyTrainingDataset(Dataset):
         return torch.tensor(np.array(sequence), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.long)
 
     def generate_training_sequence(self):
+        # todo: ensure that each label appears the same number of times in each sequence
         # first, determine whether the sequence is bursty or not
         is_bursty = np.random.rand() < self.Pb
         if is_bursty:
@@ -68,7 +70,7 @@ class BurstyTrainingDataset(Dataset):
             labels.append(y)
             classes.append(k)
         # append the query stimulus
-        k = np.random.randint(self.K+1)
+        k = np.random.randint(self.K + 1)
         x, y = self.sample_item(k)
         sequence.append(x)
         labels.append(y)
