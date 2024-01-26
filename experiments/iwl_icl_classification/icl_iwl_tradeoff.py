@@ -141,6 +141,8 @@ if __name__ == '__main__':
 
     for i, B in tqdm(enumerate(B_values)):
         for j, K in tqdm(enumerate(K_values), leave=False):
+            print('-' * 50)
+            print('B = {}, K = {}'.format(B, K))
             # Check if this iteration has already been completed
             if ic_accuracy_matrix[i, j] != 0 and iw_accuracy_matrix[i, j] != 0 and test_accuracy_matrix[i, j] != 0:
                 continue
