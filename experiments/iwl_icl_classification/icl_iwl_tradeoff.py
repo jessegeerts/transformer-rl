@@ -98,6 +98,7 @@ if __name__ == '__main__':
     import wandb
     from tqdm import tqdm
     import numpy as np
+    import os
 
     wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
 
@@ -123,23 +124,39 @@ if __name__ == '__main__':
     B_values = [0, 1, 2, 4]
     K_values = [2**7, 2**8, 2**9, 2**10, 2**11]
 
-    ic_accuracy_matrix = np.zeros((len(B_values), len(K_values)))
-    iw_accuracy_matrix = np.zeros((len(B_values), len(K_values)))
-    test_accuracy_matrix = np.zeros((len(B_values), len(K_values)))
+    if os.path.exists('icl_accuracy_matrix.npy'):
+        ic_accuracy_matrix = np.load('icl_accuracy_matrix.npy')
+    else:
+        ic_accuracy_matrix = np.zeros((len(B_values), len(K_values)))
+
+    if os.path.exists('iwl_accuracy_matrix.npy'):
+        iw_accuracy_matrix = np.load('iwl_accuracy_matrix.npy')
+    else:
+        iw_accuracy_matrix = np.zeros((len(B_values), len(K_values)))
+
+    if os.path.exists('test_accuracy_matrix.npy'):
+        test_accuracy_matrix = np.load('test_accuracy_matrix.npy')
+    else:
+        test_accuracy_matrix = np.zeros((len(B_values), len(K_values)))
 
     for i, B in tqdm(enumerate(B_values)):
         for j, K in tqdm(enumerate(K_values), leave=False):
+            # Check if this iteration has already been completed
+            if ic_accuracy_matrix[i, j] != 0 and iw_accuracy_matrix[i, j] != 0 and test_accuracy_matrix[i, j] != 0:
+                continue
+
             config.B = B
             config.K = K
             icl_accuracy, iwl_accuracy, test_accuracy = run_experiment(config, n_epochs, alpha, epsilon, K, B)
+
             ic_accuracy_matrix[i, j] = icl_accuracy
             iw_accuracy_matrix[i, j] = iwl_accuracy
             test_accuracy_matrix[i, j] = test_accuracy
 
-    # save results
-    np.save('icl_accuracy_matrix.npy', ic_accuracy_matrix)
-    np.save('iwl_accuracy_matrix.npy', iw_accuracy_matrix)
-    np.save('test_accuracy_matrix.npy', test_accuracy_matrix)
+            # Save updated matrices after each iteration
+            np.save('icl_accuracy_matrix.npy', ic_accuracy_matrix)
+            np.save('iwl_accuracy_matrix.npy', iw_accuracy_matrix)
+            np.save('test_accuracy_matrix.npy', test_accuracy_matrix)
 
     # plot results
     import matplotlib.pyplot as plt
