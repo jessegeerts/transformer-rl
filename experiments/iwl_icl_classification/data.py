@@ -95,6 +95,7 @@ class BurstyTrainingDataset(Dataset):
             context_classes = [self.sample_class() for _ in range(
                 n_classes)]  # choose the classes fixme: this should ensure that each label appears the same number of times
             unique_labels, counts = np.unique(self.class_labels[context_classes], return_counts=True)
+            equal_n_labels = np.all(counts == counts[0])
 
 
         if self.B > 0:
