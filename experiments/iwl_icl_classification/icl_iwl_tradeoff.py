@@ -19,6 +19,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
 
     # data preparation
     # ----------------------------------
+    # note, we set the size of the dataset to be the same as the batch size so that we can generate data on the fly
     dataset = BurstyTrainingDataset(K=K, D=D, size=config.batch_size, alpha=alpha, epsilon=epsilon, B=B)
     train_loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
     eval_loader_icl = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
@@ -33,13 +34,16 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
     # training loop
     # ----------------------------------
     epochs_below_threshold = 0
+    train_iter = 0
     for epoch in range(max_epochs):
+        print(f'Epoch {epoch}')
+        if config.log_to_wandb:
+            wandb.log({'epoch': epoch})
 
         dataset.set_mode('train')
         model.train()
 
         total_loss = 0
-
         for x, y in train_loader:
             optimizer.zero_grad()
             y_hat = model(x, y[:, :-1])
@@ -51,7 +55,8 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
 
             if config.log_to_wandb:
                 # log to wandb
-                wandb.log({'training_loss': loss.item()})
+                wandb.log({'training_loss': loss.item(), 'train_iter': train_iter})
+            train_iter += 1
 
         avg_loss = total_loss / len(train_loader)
         if config.log_to_wandb:
@@ -110,7 +115,8 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
         else:
             epochs_below_threshold = 0  # Reset counter if loss goes above threshold
 
-    wandb.finish()
+    if config.log_to_wandb:
+        wandb.finish()
     return icl_accuracy, iwl_accuracy, test_accuracy
 
 
