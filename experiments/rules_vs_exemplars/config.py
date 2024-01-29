@@ -1,7 +1,8 @@
 class TransformerConfig:
     def __init__(self, token_dim=4, n_blocks=3, h_dim=64, max_T=100, n_heads=2, drop_p=0.1,
                  pos_embedding_type='learned', epochs_phase1=2000, epochs_phase2=500, lr=1e-3, log_to_wandb=False,
-                 num_classes=3, batch_size=4, layer_norm=True, include_mlp=None, mlp_dim=128):
+                 num_classes=3, batch_size=4, layer_norm=True, include_mlp=None, mlp_dim=128,
+                 loss_threshold=0.01, duration_threshold=100):
         self.token_dim = token_dim  # token_dim and h_dim are the same if using one-hot embedding directly
         self.num_classes = num_classes
         self.n_blocks = n_blocks
@@ -19,4 +20,6 @@ class TransformerConfig:
         self.layer_norm = layer_norm
         self.include_mlp = include_mlp
         self.mlp_dim = mlp_dim
+        self.loss_threshold = loss_threshold
+        self.duration_threshold = duration_threshold
 

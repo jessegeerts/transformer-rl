@@ -1,3 +1,7 @@
+"""This is a replication of figure 2 in Reddy et al. 2021. We are going to loop over values of B and K and monitor the
+ICL and IWL accuracies.
+"""
+
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
@@ -9,7 +13,7 @@ from experiments.rules_vs_exemplars.config import TransformerConfig
 from experiments.rules_vs_exemplars.transformer_classification import CustomLRScheduler
 
 
-def run_experiment(config, n_epochs, alpha, epsilon, K, B):
+def run_experiment(config, max_epochs, alpha, epsilon, K, B):
     if config.log_to_wandb:
         wandb.init(project="RulesExemplars", name='iwl-icl-tradeoff-B{}-K{}'.format(B, K))
 
@@ -24,28 +28,34 @@ def run_experiment(config, n_epochs, alpha, epsilon, K, B):
     # ----------------------------------
     model = Transformer(config=config)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    scheduler = CustomLRScheduler(optimizer)
     criterion = nn.CrossEntropyLoss()
 
     # training loop
     # ----------------------------------
-    for epoch in range(n_epochs):
+    epochs_below_threshold = 0
+    for epoch in range(max_epochs):
 
         dataset.set_mode('train')
         model.train()
 
-        for x, y in train_loader:  # note: this is kinda bullshit bc we can generate data on the fly
+        total_loss = 0
+
+        for x, y in train_loader:
             optimizer.zero_grad()
             y_hat = model(x, y[:, :-1])
             loss = criterion(y_hat, y[:, -1])
             loss.backward()
             optimizer.step()
-            scheduler.step()
+
+            total_loss += loss.item()
 
             if config.log_to_wandb:
                 # log to wandb
                 wandb.log({'training_loss': loss.item()})
-                wandb.log({'learning_rate': scheduler.calculate_lr(scheduler.global_step)})
+
+        avg_loss = total_loss / len(train_loader)
+        if config.log_to_wandb:
+            wandb.log({'avg_training_loss': avg_loss})
 
         # eval loop
         model.eval()
@@ -90,6 +100,16 @@ def run_experiment(config, n_epochs, alpha, epsilon, K, B):
                     wandb.log({'test_accuracy': test_accuracy.item()})
                 break
 
+        if avg_loss <= config.loss_threshold:
+            epochs_below_threshold += 1
+            if epochs_below_threshold >= config.duration_threshold:
+                print(
+                    f"Loss  below threshold for {config.duration_threshold} consecutive epochs. Stopping training."
+                    f"The final loss was {avg_loss}.")
+                break
+        else:
+            epochs_below_threshold = 0  # Reset counter if loss goes above threshold
+
     wandb.finish()
     return icl_accuracy, iwl_accuracy, test_accuracy
 
@@ -99,6 +119,8 @@ if __name__ == '__main__':
     from tqdm import tqdm
     import numpy as np
     import os
+    import seaborn as sns
+    import matplotlib.pyplot as plt
 
     wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
 
@@ -108,7 +130,7 @@ if __name__ == '__main__':
     D = 63  # stimulus dimension
 
     # Define network hyperparameters
-    n_epochs = 10000
+    max_epochs = 50000
     P = 64  # number of possible positions
     h_dim = P + D
     mlp_dim = 128
@@ -117,7 +139,7 @@ if __name__ == '__main__':
 
     config = TransformerConfig(token_dim=D, h_dim=h_dim, log_to_wandb=True, n_blocks=2, n_heads=n_heads, batch_size=128,
                                max_T=P, num_classes=L, include_mlp=[False, True], layer_norm=False, mlp_dim=mlp_dim,
-                               drop_p=0.)
+                               drop_p=0., loss_threshold=0.01, duration_threshold=100)
 
     # we are going to loop over values of B and K and monitor the ICL and IWL accuracies
 
@@ -149,7 +171,7 @@ if __name__ == '__main__':
 
             config.B = B
             config.K = K
-            icl_accuracy, iwl_accuracy, test_accuracy = run_experiment(config, n_epochs, alpha, epsilon, K, B)
+            icl_accuracy, iwl_accuracy, test_accuracy = run_experiment(config, max_epochs, alpha, epsilon, K, B)
 
             ic_accuracy_matrix[i, j] = icl_accuracy
             iw_accuracy_matrix[i, j] = iwl_accuracy
@@ -161,17 +183,11 @@ if __name__ == '__main__':
             np.save('test_accuracy_matrix.npy', test_accuracy_matrix)
 
     # plot results
-    import matplotlib.pyplot as plt
-    plt.imshow(ic_accuracy_matrix, vmin=0, vmax=1)
-    plt.title('ICL accuracy')
-    plt.show()
-    plt.imshow(iw_accuracy_matrix, vmin=0, vmax=1)
-    plt.title('IWL accuracy')
-    plt.show()
-    plt.imshow(test_accuracy_matrix, vmin=0, vmax=1)
-    plt.title('Test accuracy')
-    plt.show()
-
-
-
-
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+    ax[0].set_title('IWL')
+    sns.heatmap(iw_accuracy_matrix, annot=True, fmt='.2f', cmap='inferno', xticklabels=K_values, yticklabels=B_values, ax=ax[0])
+    ax[1].set_title('ICL')
+    sns.heatmap(ic_accuracy_matrix, annot=True, fmt='.2f', cmap='inferno', xticklabels=K_values, yticklabels=B_values, ax=ax[1])
+    ax[2].set_title('Test')
+    sns.heatmap(test_accuracy_matrix, annot=True, fmt='.2f', cmap='inferno', xticklabels=K_values, yticklabels=B_values, ax=ax[2])
+    plt.savefig('accuracy_matrix.png')

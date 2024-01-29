@@ -87,9 +87,16 @@ class BurstyTrainingDataset(Dataset):
         labels = []
         if self.B == 0:  # if B = 0, then the sequence is IID, and the query stimulus is sampled from the same distribution
             n_classes = self.N
-        else:
+        else:  # if B = 1, the
             n_classes = self.N // self.B  # number of classes in the sequence
-        context_classes = [self.sample_class() for _ in range(n_classes)]  # choose the classes fixme: this should be sampled from the zipf distribution
+
+        equal_n_labels = False
+        while not equal_n_labels:
+            context_classes = [self.sample_class() for _ in range(
+                n_classes)]  # choose the classes fixme: this should ensure that each label appears the same number of times
+            unique_labels, counts = np.unique(self.class_labels[context_classes], return_counts=True)
+
+
         if self.B > 0:
             context_classes = np.repeat(context_classes, self.B)  # repeat each class B times
         else:
@@ -156,30 +163,30 @@ class BurstyTrainingDataset(Dataset):
         classes = classes[np.random.permutation(self.N)]  # randomly permute the order of the classes
 
         for k in classes:
-            x = class_means[k] + self.epsilon * np.random.normal(0, 1/self.D, self.D)
+            x = class_means[k] + self.epsilon * np.random.normal(0, 1 / self.D, self.D)
             y = class_labels[k]
             sequence.append(x)
             labels.append(y)
 
         # append the query stimulus
         k = np.random.choice(classes)
-        x = class_means[k] + self.epsilon * np.random.normal(0, 1/self.D, self.D)
+        x = class_means[k] + self.epsilon * np.random.normal(0, 1 / self.D, self.D)
         y = class_labels[k]
         sequence.append(x)
         labels.append(y)
         return sequence, labels
 
     def sample_item(self, k):
-        x = self.class_means[k] + self.epsilon * np.random.normal(0, 1/self.D, self.D)
+        x = self.class_means[k] + self.epsilon * np.random.normal(0, 1 / self.D, self.D)
+        #  x /= np.sqrt(1 + self.epsilon ** 2)  todo: should we even norm? it won't be a mixture of gaussians anymore
         y = self.class_labels[k]
         return x, y
 
     def sample_class(self):
-        """Sample a class according to the zipf distribution."""
-        p = np.arange(1, self.K+1) ** - self.alpha / np.sum(np.arange(1, self.K+1) ** - self.alpha)
+        """Sample a class according to the zipf distribution.
+        """
+        p = np.arange(1, self.K + 1) ** - self.alpha / np.sum(np.arange(1, self.K + 1) ** - self.alpha)
         return np.random.choice(self.K, p=p)
-
-
 
 
 if __name__ == '__main__':
@@ -260,4 +267,27 @@ if __name__ == '__main__':
         break
 
     # ---------------------------------
-    # TODO: check that magnitude of stimuli = 1
+
+    # ---------------------------------
+
+    from torch.utils.data import DataLoader
+    import torch
+
+    B_values = [0, 1, 2, 4]
+    K_values = [2 ** 7, 2 ** 8, 2 ** 9, 2 ** 10, 2 ** 11]
+
+    for i, B in enumerate(B_values):
+        for j, K in enumerate(K_values):
+            dataset = BurstyTrainingDataset(K=K, D=63, Pb=1.0, B=B)
+            loader = DataLoader(dataset, batch_size=4, shuffle=True)
+            for x, y in loader:
+                assert np.all(x.shape == np.array([4, 9, 63]))  # check that the shape is correct
+                break
+
+    # ---------------------------------
+    # check that the labels are balanced
+    dataset = BurstyTrainingDataset(K=2 ** 8, D=2, Pb=1.0, B=0)
+    loader = DataLoader(dataset, batch_size=1, shuffle=True)
+    for x, y in loader:
+        # does each label appear the same number of times?
+        labels, counts = np.unique(y[:, :-1], return_counts=True)
