@@ -36,7 +36,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
     epochs_below_threshold = 0
     train_iter = 0
     for epoch in range(max_epochs):
-        print(f'Epoch {epoch}')
+        print(f'Epoch {epoch}', end="")
         if config.log_to_wandb:
             wandb.log({'epoch': epoch})
 
