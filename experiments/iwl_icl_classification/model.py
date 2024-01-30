@@ -16,7 +16,7 @@ class MaskedCausalAttention(nn.Module):
         self.k_net = nn.Linear(h_dim, h_dim)
         self.v_net = nn.Linear(h_dim, h_dim)
 
-        self.proj_net = nn.Linear(h_dim, h_dim)
+        self.proj_net = nn.Linear(h_dim, h_dim)  # todo: we don't need this afaik (MLP can take care of this)
 
         self.att_drop = nn.Dropout(drop_p)
         self.proj_drop = nn.Dropout(drop_p)
@@ -155,7 +155,6 @@ class Transformer(nn.Module):
     def forward(self, stimuli, labels):
         B, T, D = stimuli.shape  # batch size, sequence length, stimulus dimension
         # (note, sequence length includes the query stimulus)
-
         # Embed stimuli
         # stimuli = self.proj_stim(stimuli)
         # Embed labels
@@ -166,8 +165,8 @@ class Transformer(nn.Module):
         # todo: random start position are now the same for all sequences in the batch. Try making them different.
         seq_len = (T - 1) * 2 + 1
         start_pos = np.random.choice(self.P - seq_len + 1)  # randomly choose a starting position
-        positions = torch.arange(start_pos, start_pos + seq_len)
-        pos_embeddings = F.one_hot(positions, num_classes=self.P).float()
+        positions = torch.arange(start_pos, start_pos + seq_len, device=stimuli.device)
+        pos_embeddings = F.one_hot(positions, num_classes=self.P).float().to(stimuli.device)
 
         # Create interleaved sequence with an extra stimulus at the end
         ctx_stimuli = stimuli[:, :-1, :]  # Exclude the last stimulus (query stimulus)
