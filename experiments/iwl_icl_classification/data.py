@@ -101,8 +101,9 @@ class BurstyTrainingDataset(Dataset):
         # Append the query stimulus
         k = np.random.choice(context_classes) if self.B > 0 else np.random.randint(self.K)
         query_x, query_y = self.sample_item(k)
-        sequence.append(query_x)
-        labels.append(query_y)
+
+        sequence = np.concatenate((sequence, [query_x]))
+        labels = np.concatenate((labels, [query_y]))
 
         return sequence, labels
 
