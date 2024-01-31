@@ -42,6 +42,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
 
         total_loss = 0
         for x, y in train_loader:
+            x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             y_hat = model(x, y[:, :-1])
             loss = criterion(y_hat, y[:, -1])
