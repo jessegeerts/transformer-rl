@@ -9,8 +9,7 @@ import torch.optim as optim
 
 from experiments.iwl_icl_classification.data import BurstyTrainingDataset
 from experiments.iwl_icl_classification.model import Transformer
-from experiments.rules_vs_exemplars.config import TransformerConfig
-from experiments.rules_vs_exemplars.transformer_classification import CustomLRScheduler
+from experiments.iwl_icl_classification.config import TransformerConfig
 
 
 def run_experiment(config, max_epochs, alpha, epsilon, K, B):
@@ -20,15 +19,15 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
     # data preparation
     # ----------------------------------
     # note, we set the size of the dataset to be the same as the batch size so that we can generate data on the fly
-    dataset = BurstyTrainingDataset(K=K, D=D, size=config.batch_size, alpha=alpha, epsilon=epsilon, B=B)
+    dataset = BurstyTrainingDataset(K=K, D=config.token_dim, size=config.batch_size, alpha=alpha, epsilon=epsilon, B=B)
     train_loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
     eval_loader_icl = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
     eval_loader_iwl = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
     # model preparation
     # ----------------------------------
-    model = Transformer(config=config)
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    model = Transformer(config=config).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
     criterion = nn.CrossEntropyLoss()
 
     # training loop
@@ -36,9 +35,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
     epochs_below_threshold = 0
     train_iter = 0
     for epoch in range(max_epochs):
-        print(f'Epoch {epoch}', end="")
-        if config.log_to_wandb:
-            wandb.log({'epoch': epoch})
+        print(f'\rEpoch {epoch}', end="")
 
         dataset.set_mode('train')
         model.train()
@@ -55,7 +52,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
 
             if config.log_to_wandb:
                 # log to wandb
-                wandb.log({'training_loss': loss.item(), 'train_iter': train_iter})
+                wandb.log({'training_loss': loss.item()})
             train_iter += 1
 
         avg_loss = total_loss / len(train_loader)
@@ -68,6 +65,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
             # eval on ICL
             dataset.set_mode('eval_icl')
             for x, y in eval_loader_icl:
+                x, y = x.to(device), y.to(device)
                 y_hat = model(x,  y[:, :-1])
                 loss = criterion(y_hat, y[:, -1])
                 # calculate accuracy
@@ -81,6 +79,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
             # eval on IWL
             dataset.set_mode('eval_iwl')
             for x, y in eval_loader_iwl:
+                x, y = x.to(device), y.to(device)
                 # eval on IWL
                 y_hat = model(x,  y[:, :-1])
                 loss = criterion(y_hat, y[:, -1])
@@ -95,6 +94,7 @@ def run_experiment(config, max_epochs, alpha, epsilon, K, B):
             # eval on training distribution
             dataset.set_mode('train')
             for x, y in train_loader:
+                x, y = x.to(device), y.to(device)
                 y_hat = model(x,  y[:, :-1])
                 loss = criterion(y_hat, y[:, -1])
                 # calculate accuracy
@@ -130,13 +130,19 @@ if __name__ == '__main__':
 
     wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
     # data parameters
-    alpha = 0.
+    alpha = 0.  # zipf exponent
     L = 32  # number of labels
     D = 63  # stimulus dimension
 
     # Define network hyperparameters
     max_epochs = 50000
+    loss_threshold = 0.05
+    duration_threshold = 10
+
     P = 64  # number of possible positions
     h_dim = P + D
     mlp_dim = 128
@@ -145,7 +151,7 @@ if __name__ == '__main__':
 
     config = TransformerConfig(token_dim=D, h_dim=h_dim, log_to_wandb=True, n_blocks=2, n_heads=n_heads, batch_size=128,
                                max_T=P, num_classes=L, include_mlp=[False, True], layer_norm=False, mlp_dim=mlp_dim,
-                               drop_p=0., loss_threshold=0.01, duration_threshold=100)
+                               drop_p=0., loss_threshold=loss_threshold, duration_threshold=duration_threshold)
 
     # we are going to loop over values of B and K and monitor the ICL and IWL accuracies
 
