@@ -77,11 +77,54 @@ class BurstyTrainingDataset(Dataset):
         return sequence, labels
 
     def generate_bursty_sequence(self):
+        if self.B == 0:
+            n_classes = self.N
+        else:
+            n_classes = self.N // self.B
+
+        # Vectorized sampling for classes
+        context_classes = self.sample_class_vectorized(n_classes)
+
+        # Ensuring each label appears the same number of times
+        unique_labels, counts = np.unique(self.class_labels[context_classes], return_counts=True)
+        while not np.all(counts == counts[0]):
+            context_classes = self.sample_class_vectorized(n_classes)
+            unique_labels, counts = np.unique(self.class_labels[context_classes], return_counts=True)
+
+        if self.B > 0:
+            context_classes = np.repeat(context_classes, self.B)
+        context_classes = context_classes[np.random.permutation(self.N)]
+
+        # Vectorized sampling for items
+        sequence, labels = self.sample_item_vectorized(context_classes)
+
+        # Append the query stimulus
+        k = np.random.choice(context_classes) if self.B > 0 else np.random.randint(self.K)
+        query_x, query_y = self.sample_item(k)
+        sequence.append(query_x)
+        labels.append(query_y)
+
+        return sequence, labels
+
+    def sample_class_vectorized(self, n_samples):
+        p = np.arange(1, self.K + 1) ** -self.alpha / np.sum(np.arange(1, self.K + 1) ** -self.alpha)
+        return np.random.choice(self.K, size=n_samples, p=p)
+
+    def sample_item_vectorized(self, classes):
+        noises = self.epsilon * np.random.normal(0, 1 / self.D, (len(classes), self.D))
+        x = self.class_means[classes] + noises
+        # x /= np.sqrt(1 + self.epsilon ** 2)  # Uncomment if normalization is needed
+        y = self.class_labels[classes]
+        return x, y
+
+    def generate_bursty_sequence_naive(self):
         """Generate a bursty sequence of N stimuli and labels.
 
         The burstiness B is the number of occurrences of items from a particular class in an input sequence (N is a
         multiple of B). pB is the fraction of bursty sequences. Specifically, the burstiness is B for a fraction pB of
         the training data.
+
+        Note: this takes an awful long time. Either generate the data faster or generate it beforehand and save it.
         """
         sequence = []
         labels = []
@@ -93,10 +136,9 @@ class BurstyTrainingDataset(Dataset):
         equal_n_labels = False
         while not equal_n_labels:
             context_classes = [self.sample_class() for _ in range(
-                n_classes)]  # choose the classes fixme: this should ensure that each label appears the same number of times
+                n_classes)]  # choose the classes
             unique_labels, counts = np.unique(self.class_labels[context_classes], return_counts=True)
             equal_n_labels = np.all(counts == counts[0])
-
 
         if self.B > 0:
             context_classes = np.repeat(context_classes, self.B)  # repeat each class B times
@@ -205,7 +247,7 @@ if __name__ == '__main__':
             xx.append(x)
             yy.append(y)
 
-    plt.scatter(*np.array(xx).T, c=yy)
+    plt.scatter(*np.array(xx).T, c=yy, cmap='Set3')
 
     # ---------------------------------
     # bursty sequence example
@@ -214,7 +256,7 @@ if __name__ == '__main__':
     sequence, labels = dataset.generate_training_sequence()
 
     plt.figure()
-    plt.scatter(*np.array(sequence).T, c=labels)
+    plt.scatter(*np.array(sequence[:-1]).T, c=labels[:-1], cmap='Set3')
     plt.scatter(*np.array(sequence[-1]).T, c='r', marker='x')
     plt.title('Bursty sequence')
 
@@ -224,7 +266,7 @@ if __name__ == '__main__':
     sequence, labels = dataset.generate_training_sequence()
 
     plt.figure()
-    plt.scatter(*np.array(sequence).T, c=labels)
+    plt.scatter(*np.array(sequence[:-1]).T, c=labels[:-1], cmap='Set3')
     plt.scatter(*np.array(sequence[-1]).T, c='r', marker='x')
     plt.title('IID sequence')
 
