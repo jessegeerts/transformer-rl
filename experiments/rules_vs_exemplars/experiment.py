@@ -19,8 +19,7 @@ if __name__ == '__main__':
     n_heads = 4  # note: D being odd is a problem for n_heads > 1. the paper uses 1 head.
 
     config = TransformerConfig(token_dim=D, h_dim=h_dim, log_to_wandb=True, n_blocks=12, n_heads=n_heads, batch_size=32,
-                               max_T=P, num_classes=L, include_mlp=[False, True], layer_norm=False, mlp_dim=mlp_dim,
-                               drop_p=0.)
+                               max_T=P, include_mlp=[False, True], layer_norm=False, mlp_dim=mlp_dim, drop_p=0.)
 
     if config.log_to_wandb:
         wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
