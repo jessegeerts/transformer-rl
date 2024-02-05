@@ -4,3 +4,4 @@ trajectories/*
 **/__pycache__/
 models/*
 wandb/
+experiments/iwl_icl_classification/results/*
