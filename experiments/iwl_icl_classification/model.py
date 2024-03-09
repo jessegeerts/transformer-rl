@@ -144,6 +144,7 @@ class Transformer(nn.Module):
         self.transformer = nn.Sequential(*blocks)
 
         # projection head
+        self.layer_norm = layer_norm
         self.ln = nn.LayerNorm(h_dim)
         self.proj_head = nn.Linear(h_dim, token_dim)
 
@@ -177,7 +178,9 @@ class Transformer(nn.Module):
         # h += pos_embeddings.unsqueeze(0)
         h = torch.cat([h, pos_embeddings.unsqueeze(0).expand(B, seq_len, self.P)], dim=-1)
         # Transformer and prediction
-        h = self.ln(self.transformer(h))
+        h = self.transformer(h)
+        if self.layer_norm:
+            h = self.ln(h)
         pred = self.proj_head(h)
 
         # Select the output corresponding to the last stimulus (query stimulus)
