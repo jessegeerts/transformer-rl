@@ -14,17 +14,18 @@ if __name__ == '__main__':
 
     # check if apple gpu is available
     if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        print("MPS is available and built")
         device = torch.device('mps')
+    elif torch.cuda.is_available():
+        device = torch.device('cuda')
     else:
-        print("MPS is not available or not built")
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device('cpu')
+    print(f'Using device: {device}')
 
     # Define hyperparameters
     n_epochs = 200000
     P = 64  # number of possible positions
     D = 63  # stimulus dimension
-    K = 2 ** 9  # number of classes (not to be confused with number of labels. multiple classes can have the same label)
+    K = 2 ** 11  # number of classes (not to be confused with number of labels. multiple classes can have the same label)
     L = 32  # number of labels
     h_dim = P + D
     mlp_dim = 128
@@ -38,7 +39,7 @@ if __name__ == '__main__':
 
     if config.log_to_wandb:
         wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
-        wandb.init(project="RulesExemplars", name='TransformerClassification-AppendedPositions')
+        wandb.init(project="RulesExemplars", name=f'TClf-B={B},alpha={alpha},K={K}')
 
     # data preparation
     # ----------------------------------
