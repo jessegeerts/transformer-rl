@@ -40,6 +40,8 @@ class BurstyTrainingDataset(Dataset):
             sequence, labels = self.generate_eval_sequence_iwl()
         elif self.mode == 'eval_icl':
             sequence, labels = self.generate_eval_sequence_icl()
+        elif self.mode == 'eval_icl_swapped_labels':
+            sequence, labels = self.generate_eval_sequence_icl_swapped_labels()
         else:
             raise ValueError("Invalid mode. Mode should be 'train' or 'eval'.")
 
@@ -77,6 +79,17 @@ class BurstyTrainingDataset(Dataset):
         return sequence, labels
 
     def generate_bursty_sequence(self):
+        # TODO: in chan et al,
+        #  each bursty sequence is an S-shot 2-way learning problem, plus possibly with a "remainder" of classes drawn
+        #  IID. The remainder is drawn from the same distribution as the classes in the S-shot 2-way learning problem.
+        #  however, in reddy et al, each label appears the same number of times as each other label in the sequence.
+        #  both can't be true. For now, a burstiness B means each other class also appears B times in the sequence.
+        # if B = 1, it's a 1-shot 2-way learning problem, with a remainder of N - 2 classes drawn IID
+        # if B = 2, it's a 2-shot 2-way learning problem, with a remainder of N - 4 classes drawn IID
+        # if B = 4, it's a 4-shot 2-way learning problem, with a remainder of N - 8 classes drawn IID
+
+        # first, we generate the few-shot part of the sequence
+
         if self.B == 0:
             n_classes = self.N
         else:
@@ -108,6 +121,8 @@ class BurstyTrainingDataset(Dataset):
         return sequence, labels
 
     def sample_class_vectorized(self, n_samples):
+        """Sample a class according to the zipf distribution. Vectorized version of sample_class.
+        """
         p = np.arange(1, self.K + 1) ** -self.alpha / np.sum(np.arange(1, self.K + 1) ** -self.alpha)
         return np.random.choice(self.K, size=n_samples, p=p)
 
@@ -219,6 +234,14 @@ class BurstyTrainingDataset(Dataset):
         sequence.append(x)
         labels.append(y)
         return sequence, labels
+
+    def generate_eval_sequence_icl_swapped_labels(self):
+        """In the second ICL evaluation, we draw existing classes and assign them to new labels."""
+        sequence, original_labels = self.generate_bursty_sequence()
+        # now for each label, we assign a random new label
+        all_labels_permuted = np.random.permutation(self.L)
+        new_labels = all_labels_permuted[original_labels]
+        return sequence, new_labels
 
     def sample_item(self, k):
         x = self.class_means[k] + self.epsilon * np.random.normal(0, 1 / self.D, self.D)

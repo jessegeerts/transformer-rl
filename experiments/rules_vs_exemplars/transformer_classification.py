@@ -9,6 +9,7 @@ import math
 from experiments.rules_vs_exemplars.rules_exemplars import SequenceDataGen
 from transformer import Transformer
 from experiments.rules_vs_exemplars.config import TransformerConfig
+from experiments.rules_vs_exemplars.embedding import InputEmbedder
 
 # Define hyperparameters
 # note that token_dim and h_dim are the same for now but they don't have to be at all
@@ -68,7 +69,7 @@ class TransformerClassifier(Transformer):
         # (note, sequence length includes the query stimulus)
 
         # Embed stimuli  todo: try no embedding
-        # stimuli = self.proj_stim(stimuli)
+        stimuli = self.proj_stim(stimuli)
         # Embed labels  todo: try one-hot embedding for labels
         # embedded_labels = self.label_embedding(labels)
         embedded_labels = F.one_hot(labels, num_classes=D).float()
@@ -89,6 +90,30 @@ class TransformerClassifier(Transformer):
         h = torch.cat([h, stimuli[:, -1, :].unsqueeze(1)], dim=1)  # Add the query stimulus at the end
         # h += pos_embeddings.unsqueeze(0)
         h = torch.cat([h, pos_embeddings.unsqueeze(0).expand(B, seq_len, self.P)], dim=-1)
+        # Transformer and prediction
+        h = self.ln(self.transformer(h))
+        pred = self.proj_head(h)
+
+        # Select the output corresponding to the last stimulus (query stimulus)
+        query_pred = pred[:, -1, :]
+
+        return query_pred
+
+
+class TransformerClassifierV2(Transformer):
+    def __init__(self, token_dim=None, n_blocks=None, h_dim=None, max_T=None, n_heads=None, drop_p=None,
+                 config=None):
+        super().__init__(token_dim=token_dim, n_blocks=n_blocks, h_dim=h_dim, max_T=max_T, n_heads=n_heads,
+                         drop_p=drop_p, config=config)
+        self._input_embedder = InputEmbedder(num_classes=config.num_classes, emb_dim=config.h_dim,
+                                             example_encoding=config.example_encoding)
+        self.proj_head = nn.Linear(config.h_dim, config.num_classes)
+        self.P = config.max_T  # number of possible positions
+
+    def forward(self, stimuli, labels, is_training=True):
+
+        h = self._input_embedder(stimuli, labels, is_training)
+
         # Transformer and prediction
         h = self.ln(self.transformer(h))
         pred = self.proj_head(h)

@@ -41,7 +41,7 @@ class MaskedCausalAttention(nn.Module):
         # weights (B, N, T, T)
         weights = q @ k.transpose(2, 3) / math.sqrt(D)
         # causal mask applied to weights
-        weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf'))
+        weights = weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf'))
         # normalize weights, all -inf -> 0 after softmax
         normalized_weights = F.softmax(weights, dim=-1)
 

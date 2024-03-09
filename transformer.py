@@ -63,12 +63,12 @@ class MaskedCausalAttention(nn.Module):
         # weights (B, N, T, T)
         weights = q @ k.transpose(2, 3) / math.sqrt(D)
         # causal mask applied to weights
-        weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf'))
+        weights = weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf'))  # fixme: check this
         # normalize weights, all -inf -> 0 after softmax
         normalized_weights = F.softmax(weights, dim=-1)
 
-        # attention (B, N, T, D)
-        attention = self.att_drop(normalized_weights @ v)
+        # attention (B, N, T, D)  # todo: try tiled dropout
+        attention = self.att_drop(normalized_weights @ v)  # multiply weights by values and apply dropout
 
         # gather heads and project (B, N, T, D) -> (B, T, N*D)
         attention = attention.transpose(1, 2).contiguous().view(B, T, N * D)
@@ -78,16 +78,19 @@ class MaskedCausalAttention(nn.Module):
 
 
 class Block(nn.Module):
+    """Transformer block. Consists of masked causal attention and a feedforward layer.
 
-    def __init__(self, h_dim, max_T, n_heads, drop_p):
+    Note: we use layernorms both after the attention and after the feedforward layer.
+    """
+    def __init__(self, h_dim, max_T, n_heads, drop_p, widening_factor=4):
         super().__init__()
 
         self.attention = MaskedCausalAttention(h_dim, max_T, n_heads, drop_p)
 
         self.mlp = nn.Sequential(
-            nn.Linear(h_dim, 4 * h_dim),
+            nn.Linear(h_dim, widening_factor * h_dim),
             nn.GELU(),
-            nn.Linear(4 * h_dim, h_dim),
+            nn.Linear(widening_factor * h_dim, h_dim),
             nn.Dropout(drop_p),
         )
 
@@ -106,7 +109,8 @@ class Block(nn.Module):
 
 class Transformer(nn.Module):
 
-    def __init__(self, token_dim=None, n_blocks=None, h_dim=None, max_T=None, n_heads=None, drop_p=None, config=None):
+    def __init__(self, token_dim=None, n_blocks=None, h_dim=None, max_T=None, n_heads=None, drop_p=None,
+                 widening_factor=4, config=None):
         super().__init__()
 
         if config:
@@ -116,6 +120,7 @@ class Transformer(nn.Module):
             max_T = config.max_T
             n_heads = config.n_heads
             drop_p = config.drop_p
+            widening_factor = config.widening_factor
         elif None in [token_dim, n_blocks, h_dim, max_T, n_heads, drop_p]:
             raise ValueError("Either provide a complete config or all hyperparameters individually.")
 
@@ -133,7 +138,7 @@ class Transformer(nn.Module):
         self.dropout = nn.Dropout(drop_p)
 
         # transformer blocks
-        blocks = [Block(h_dim, max_T, n_heads, drop_p) for _ in range(n_blocks)]
+        blocks = [Block(h_dim, max_T, n_heads, drop_p, widening_factor=widening_factor) for _ in range(n_blocks)]
         self.transformer = nn.Sequential(*blocks)
 
         # projection head

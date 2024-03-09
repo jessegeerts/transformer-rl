@@ -12,29 +12,23 @@ if __name__ == '__main__':
     import wandb
     from tqdm import tqdm
 
-    # check if apple gpu is available
-    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        print("MPS is available and built")
-        device = torch.device('mps')
-    else:
-        print("MPS is not available or not built")
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     # Define hyperparameters
-    n_epochs = 200000
+    n_epochs = 10000
     P = 64  # number of possible positions
     D = 63  # stimulus dimension
     K = 2 ** 9  # number of classes (not to be confused with number of labels. multiple classes can have the same label)
     L = 32  # number of labels
+    N = 8  # sequence length (number of images and labels in context)
     h_dim = P + D
     mlp_dim = 128
     n_heads = 1  # note: D being odd is a problem for n_heads > 1. the paper uses 1 head.
-    alpha = 0.  # zipf parameter
-    B = 4  # burstiness
+    alpha = 0  # zipf parameter
+    B = 2
+    epsilon = .1
 
     config = TransformerConfig(token_dim=D, h_dim=h_dim, log_to_wandb=True, n_blocks=2, n_heads=n_heads, batch_size=128,
                                max_T=P, num_classes=L, include_mlp=[False, True], layer_norm=False, mlp_dim=mlp_dim,
-                               drop_p=0., within_class_var=.75, alpha=alpha)
+                               drop_p=0., within_class_var=epsilon, alpha=alpha)
 
     if config.log_to_wandb:
         wandb.login(key='9f4a033fffce45cce1ee2d5f657d43634a1d2889')
@@ -42,14 +36,15 @@ if __name__ == '__main__':
 
     # data preparation
     # ----------------------------------
-    dataset = BurstyTrainingDataset(K=K, D=D, size=config.batch_size, L=L, epsilon=config.within_class_var, alpha=config.alpha)
+    dataset = BurstyTrainingDataset(K=K, D=D, B=B, size=config.batch_size, L=L, epsilon=config.within_class_var,
+                                    alpha=config.alpha)
     train_loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
     eval_loader_icl = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
     eval_loader_iwl = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
     # model preparation
     # ----------------------------------
-    model = Transformer(config=config).to(device)
+    model = Transformer(config=config)
     optimizer = optim.SGD(model.parameters(), lr=.01)
     criterion = nn.CrossEntropyLoss()
 
@@ -61,7 +56,6 @@ if __name__ == '__main__':
         model.train()
 
         for x, y in train_loader:  # note: this is kinda bullshit bc we can generate data on the fly
-            x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             y_hat = model(x, y[:, :-1])
             loss = criterion(y_hat, y[:, -1])
@@ -78,7 +72,6 @@ if __name__ == '__main__':
             # eval on ICL
             dataset.set_mode('eval_icl')
             for x, y in eval_loader_icl:
-                x, y = x.to(device), y.to(device)
                 y_hat = model(x,  y[:, :-1])
                 loss = criterion(y_hat, y[:, -1])
                 # calculate accuracy
@@ -89,10 +82,21 @@ if __name__ == '__main__':
                     wandb.log({'icl_accuracy': accuracy.item()})
                 break
 
+            dataset.set_mode('eval_icl_swapped_labels')
+            for x, y in eval_loader_icl:
+                y_hat = model(x,  y[:, :-1])
+                loss = criterion(y_hat, y[:, -1])
+                # calculate accuracy
+                predicted_labels = torch.argmax(y_hat, dim=1)
+                accuracy = (predicted_labels == y[:, -1]).float().mean()
+                if config.log_to_wandb:
+                    wandb.log({'icl2_loss': loss.item()})
+                    wandb.log({'icl2_accuracy': accuracy.item()})
+                break
+
             # eval on IWL
             dataset.set_mode('eval_iwl')
             for x, y in eval_loader_iwl:
-                x, y = x.to(device), y.to(device)
                 # eval on IWL
                 y_hat = model(x,  y[:, :-1])
                 loss = criterion(y_hat, y[:, -1])
@@ -107,7 +111,6 @@ if __name__ == '__main__':
             # eval on training distribution
             dataset.set_mode('train')
             for x, y in train_loader:
-                x, y = x.to(device), y.to(device)
                 y_hat = model(x,  y[:, :-1])
                 loss = criterion(y_hat, y[:, -1])
                 # calculate accuracy

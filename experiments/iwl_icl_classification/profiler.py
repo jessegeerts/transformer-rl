@@ -24,7 +24,7 @@ L = 32  # number of labels
 D = 63  # stimulus dimension
 
 # Define network hyperparameters
-max_epochs = 10
+max_epochs = 50000
 loss_threshold = 0.05
 duration_threshold = 10
 
@@ -52,42 +52,11 @@ eval_loader_iwl = DataLoader(dataset, batch_size=config.batch_size, shuffle=True
 # model preparation
 # ----------------------------------
 model = Transformer(config=config).to(device)
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=.01)
 criterion = nn.CrossEntropyLoss()
 
 
-# measure time taken for data generation (train_loader)
-
-start_time = time.time()
-for _ in range(max_epochs):
-    for x, y in train_loader:
-        pass
-total_time = time.time() - start_time
-print(f"Time taken for data generation: {total_time}")
-
-
-# measure time taken for data generation (eval_loader_icl)
-
-start_time = time.time()
-for _ in range(max_epochs):
-    for x, y in eval_loader_icl:
-        pass
-
-total_time = time.time() - start_time
-print(f"Time taken for data generation (ICL): {total_time}")
-
-# measure time taken for data generation (eval_loader_iwl)
-
-start_time = time.time()
-for _ in range(max_epochs):
-    for x, y in eval_loader_iwl:
-        pass
-
-total_time = time.time() - start_time
-print(f"Time taken for data generation (IWL): {total_time}")
-
 # measure time taken for training
-
 
 start_time = time.time()
 for epoch in range(max_epochs):
@@ -106,6 +75,14 @@ for epoch in range(max_epochs):
         total_loss += loss.item()
 
     avg_loss = total_loss / len(train_loader)
+
+    if epoch % 100 == 0:
+        print(f'\rEpoch {epoch}', end="")
+        print(f'\tLoss: {avg_loss:.4f}', end="")
+
+    if avg_loss <= config.loss_threshold:
+        print(f"Loss below threshold. Stopping training. The final loss was {avg_loss}.")
+        break
 
 total_time = time.time() - start_time
 print(f"Time taken for training (including data loading): {total_time}")
