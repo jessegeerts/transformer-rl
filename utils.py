@@ -4,6 +4,13 @@ import numpy as np
 import random
 
 
+class dotdict(dict):
+    """dot.notation access to dictionary attributes"""
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+
 def evaluate_on_env_append(model, context_len, env, rtg_target, rtg_scale, num_eval_episodes=10, max_ep_len=1000, discrete=True, render=False):
     """Evaluate a model on an environment.
 
