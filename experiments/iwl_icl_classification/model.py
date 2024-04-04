@@ -16,7 +16,7 @@ class MaskedCausalAttention(nn.Module):
         self.k_net = nn.Linear(h_dim, h_dim)
         self.v_net = nn.Linear(h_dim, h_dim)
 
-        self.proj_net = nn.Linear(h_dim, h_dim)  # todo: we don't need this afaik (MLP can take care of this)
+        self.proj_net = nn.Linear(h_dim, h_dim)
 
         self.att_drop = nn.Dropout(drop_p)
         self.proj_drop = nn.Dropout(drop_p)
@@ -28,7 +28,7 @@ class MaskedCausalAttention(nn.Module):
         # during backpropagation
         self.register_buffer('mask', mask)
 
-    def forward(self, x):
+    def forward(self, x, causal=True, index=None, set_custom_mask=False):
         B, T, C = x.shape  # batch size, seq length, h_dim * n_heads
 
         N, D = self.n_heads, C // self.n_heads  # N = num heads, D = attention dim
@@ -41,7 +41,15 @@ class MaskedCausalAttention(nn.Module):
         # weights (B, N, T, T)
         weights = q @ k.transpose(2, 3) / math.sqrt(D)
         # causal mask applied to weights
-        weights = weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf'))
+        if causal:
+            weights = weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf'))
+
+        if set_custom_mask:
+            if index == 0:
+                weights = torch.diag(torch.ones(T-1), diagonal=-1).unsqueeze(0).unsqueeze(0)
+                weights[0, 0, 0, 0] = 1.
+                weights[weights == 0] = float('-inf')
+
         # normalize weights, all -inf -> 0 after softmax
         normalized_weights = F.softmax(weights, dim=-1)
 
@@ -79,10 +87,10 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(h_dim)
         self.ln2 = nn.LayerNorm(h_dim)
 
-    def forward(self, x):
+    def forward(self, x, index=None):
         # Attention -> LayerNorm -> MLP -> LayerNorm
 
-        x = x + self.attention(x)  # residual
+        x = x + self.attention(x, index=index)  # residual
         if self.layer_norm:
             x = self.ln1(x)
         if self.include_mlp:
@@ -122,6 +130,7 @@ class Transformer(nn.Module):
             drop_p = config.drop_p
             mlp_dim = config.mlp_dim
             layer_norm = config.layer_norm
+            include_mlp = config.include_mlp
         elif None in [token_dim, n_blocks, h_dim, max_T, n_heads, drop_p, mlp_dim]:
             raise ValueError("Either provide a complete config or all hyperparameters individually.")
 
@@ -140,13 +149,13 @@ class Transformer(nn.Module):
         else:
             assert len(include_mlp) == n_blocks, "include_mlp must be a list of size n_blocks."
 
-        blocks = [Block(h_dim, max_T, n_heads, drop_p, mlp_dim, include_mlp[b], layer_norm) for b in range(n_blocks)]
-        self.transformer = nn.Sequential(*blocks)
+        # blocks = [Block(h_dim, max_T, n_heads, drop_p, mlp_dim, include_mlp[b], layer_norm) for b in range(n_blocks)]
+        self.blocks = [Block(h_dim, max_T, n_heads, drop_p, mlp_dim, include_mlp[b], layer_norm) for b in range(n_blocks)]
+        # self.transformer = nn.Sequential(*blocks)
 
         # projection head
         self.layer_norm = layer_norm
         self.ln = nn.LayerNorm(h_dim)
-        self.proj_head = nn.Linear(h_dim, token_dim)
 
         self.label_embedding = nn.Embedding(config.num_classes, config.h_dim)  # embed labels into stimulus space
         self.pos_embedding = nn.Embedding(config.max_T, config.h_dim)
@@ -163,11 +172,11 @@ class Transformer(nn.Module):
         embedded_labels = F.one_hot(labels, num_classes=D).float()
         # Embed positions
         # make positions random to learn translation-invariant computation
-        # todo: random start position are now the same for all sequences in the batch. Try making them different.
+        # todo: random start position are now the same for all sequences in the batch. Try making them different. !!
         seq_len = (T - 1) * 2 + 1
-        start_pos = np.random.choice(self.P - seq_len + 1)  # randomly choose a starting position
-        positions = torch.arange(start_pos, start_pos + seq_len, device=stimuli.device)
-        pos_embeddings = F.one_hot(positions, num_classes=self.P).float().to(stimuli.device)
+        start_pos = np.random.choice(self.P - seq_len + 1, size=B)  # randomly choose a starting position
+        positions = [torch.arange(start, start + seq_len) for start in start_pos]
+        pos_embeddings = torch.stack([F.one_hot(pos, num_classes=self.P).float().to(stimuli.device) for pos in positions]).to(stimuli.device)
 
         # Create interleaved sequence with an extra stimulus at the end
         ctx_stimuli = stimuli[:, :-1, :]  # Exclude the last stimulus (query stimulus)
@@ -176,9 +185,12 @@ class Transformer(nn.Module):
         h = h[:, interleave_indices, :].view(B, -1, D)
         h = torch.cat([h, stimuli[:, -1, :].unsqueeze(1)], dim=1)  # Add the query stimulus at the end
         # h += pos_embeddings.unsqueeze(0)
-        h = torch.cat([h, pos_embeddings.unsqueeze(0).expand(B, seq_len, self.P)], dim=-1)
+        h = torch.cat([h, pos_embeddings], dim=-1)
         # Transformer and prediction
-        h = self.transformer(h)
+
+        for index, block in enumerate(self.blocks):
+            h = block(h, index=index)  # Now you pass the index to each block's forward method
+
         if self.layer_norm:
             h = self.ln(h)
         pred = self.proj_head(h)
