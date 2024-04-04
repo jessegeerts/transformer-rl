@@ -13,7 +13,7 @@ class BurstyTrainingDataset(Dataset):
     P = 65  # dimension of position embeddings
     N = 8  # number of stimuli in a sequence
 
-    def __init__(self, size=1024, K=128, B=4, alpha=1.0, D=63, Pb=1., L=32, epsilon=0.1):
+    def __init__(self, size=1024, K=128, B=4, alpha=1.0, D=63, Pc=.75, Pb=1., L=32, epsilon=0.1):
         self.size = size
         self.K = K  # number of classes
         self.B = B  # burstiness of sequences
@@ -21,9 +21,10 @@ class BurstyTrainingDataset(Dataset):
         self.L = L
         self.epsilon = epsilon  # magnitude of within-class noise
         self.alpha = alpha  # zipf parameter
-        self.Pb = Pb  # proportion of bursty sequences
-        self.class_means = np.random.normal(0, 1 / self.D, (
-        K, self.D))  # Mean vectors for each class (note: could change this to the chan et al. means)
+        self.Pc = Pc  # proportion of IC sequences
+        self.Pb = Pb  # proportion of bursty sequences (as a proportion of non-IC sequences)
+        self.class_means = np.random.normal(0, 1 / np.sqrt(self.D), (
+        K, self.D))  # Mean vectors for each class (FIXME: WAS WRONG. CHANGED TO 1/sqrt(D))
         self.class_labels = np.random.choice(self.L, size=K)  # Labels for each class
         self.mode = 'train'
 
@@ -48,15 +49,18 @@ class BurstyTrainingDataset(Dataset):
         return torch.tensor(np.array(sequence), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.long)
 
     def generate_training_sequence(self):
-        # todo: ensure that each label appears the same number of times in each sequence
-        # first, determine whether the sequence is bursty or not
-        is_bursty = np.random.rand() < self.Pb
-        if is_bursty:
-            # generate a bursty sequence
-            sequence, labels = self.generate_bursty_sequence()
-        else:
-            # generate a iid sequence
-            sequence, labels = self.generate_iid_sequence()
+        is_ic = np.random.rand() < self.Pc
+        if is_ic:  # with probability Pc, generate a sequence consisting of novel classes, randomly assigned to labels
+            sequence, labels = self.generate_ic_sequence()
+        else:  # with probability 1 - Pc, generate sequences of existing classes that are either bursty or IID
+            # first, determine whether the sequence is bursty or not
+            is_bursty = np.random.rand() < self.Pb
+            if is_bursty:
+                # generate a bursty sequence
+                sequence, labels = self.generate_bursty_sequence()
+            else:
+                # generate a iid sequence
+                sequence, labels = self.generate_iid_sequence()
         return sequence, labels
 
     def generate_iid_sequence(self):
@@ -71,8 +75,8 @@ class BurstyTrainingDataset(Dataset):
             sequence.append(x)
             labels.append(y)
             classes.append(k)
-        # append the query stimulus
-        k = np.random.randint(self.K + 1)
+        # append the query stimulusß
+        k = np.random.randint(self.K)
         x, y = self.sample_item(k)
         sequence.append(x)
         labels.append(y)
@@ -127,55 +131,11 @@ class BurstyTrainingDataset(Dataset):
         return np.random.choice(self.K, size=n_samples, p=p)
 
     def sample_item_vectorized(self, classes):
-        noises = self.epsilon * np.random.normal(0, 1 / self.D, (len(classes), self.D))
+        noises = self.epsilon * np.random.normal(0, 1 / np.sqrt(self.D), (len(classes), self.D))
         x = self.class_means[classes] + noises
-        # x /= np.sqrt(1 + self.epsilon ** 2)  # Uncomment if normalization is needed
+        x /= np.sqrt(1 + self.epsilon ** 2)  # Uncomment if normalization is needed
         y = self.class_labels[classes]
         return x, y
-
-    def generate_bursty_sequence_naive(self):
-        """Generate a bursty sequence of N stimuli and labels.
-
-        The burstiness B is the number of occurrences of items from a particular class in an input sequence (N is a
-        multiple of B). pB is the fraction of bursty sequences. Specifically, the burstiness is B for a fraction pB of
-        the training data.
-
-        Note: this takes an awful long time. Either generate the data faster or generate it beforehand and save it.
-        """
-        sequence = []
-        labels = []
-        if self.B == 0:  # if B = 0, then the sequence is IID, and the query stimulus is sampled from the same distribution
-            n_classes = self.N
-        else:  # if B = 1, the
-            n_classes = self.N // self.B  # number of classes in the sequence
-
-        equal_n_labels = False
-        while not equal_n_labels:
-            context_classes = [self.sample_class() for _ in range(
-                n_classes)]  # choose the classes
-            unique_labels, counts = np.unique(self.class_labels[context_classes], return_counts=True)
-            equal_n_labels = np.all(counts == counts[0])
-
-        if self.B > 0:
-            context_classes = np.repeat(context_classes, self.B)  # repeat each class B times
-        else:
-            context_classes = np.array(context_classes)
-        context_classes = context_classes[np.random.permutation(self.N)]  # randomly permute the order of the classes
-
-        for k in context_classes:
-            x, y = self.sample_item(k)
-            sequence.append(x)
-            labels.append(y)
-
-        # append the query stimulus
-        if self.B == 0:
-            k = np.random.randint(self.K)
-        else:  # for bursty sequences, the query stimulus is in the context
-            k = np.random.choice(context_classes)
-        x, y = self.sample_item(k)
-        sequence.append(x)
-        labels.append(y)
-        return sequence, labels
 
     def generate_eval_sequence_iwl(self):
         """Generate sequence for evaluating in weights learning.
@@ -235,6 +195,12 @@ class BurstyTrainingDataset(Dataset):
         labels.append(y)
         return sequence, labels
 
+    def generate_ic_sequence(self):
+        """This is the same as evaluation sequences for ICL. We draw completely new classes which are assigned to
+        existing labels.
+        """
+        return self.generate_eval_sequence_icl()
+
     def generate_eval_sequence_icl_swapped_labels(self):
         """In the second ICL evaluation, we draw existing classes and assign them to new labels."""
         sequence, original_labels = self.generate_bursty_sequence()
@@ -245,7 +211,7 @@ class BurstyTrainingDataset(Dataset):
 
     def sample_item(self, k):
         x = self.class_means[k] + self.epsilon * np.random.normal(0, 1 / self.D, self.D)
-        #  x /= np.sqrt(1 + self.epsilon ** 2)  todo: should we even norm? it won't be a mixture of gaussians anymore
+        x /= np.sqrt(1 + self.epsilon ** 2)  # todo: should we even norm? it won't be a mixture of gaussians anymore
         y = self.class_labels[k]
         return x, y
 
