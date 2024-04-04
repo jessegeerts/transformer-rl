@@ -70,7 +70,7 @@ if __name__ == '__main__':
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
-    device = 'cpu'
+
     print(f'Using device: {device}')
 
     # Define hyperparameters
@@ -121,12 +121,12 @@ if __name__ == '__main__':
     test_inputs_ic2, test_labels_ic2 = generate_input_seqs(mus_label,mus_class,labels_class,S,N, Nmax,eps = within_class_var, P = P, B = B, p_B = 1, p_C = 0, flip_labels = True, no_repeats = no_repeats)
     test_inputs_iw, test_labels_iw = generate_input_seqs(mus_label,mus_class,labels_class,S,N, Nmax,eps = within_class_var, P = P, B = 0, p_B = 0, p_C = 0, no_repeats = no_repeats)
 
-    test_inputs_ic = torch.from_numpy(np.array(test_inputs_ic)).float()
-    test_inputs_iw = torch.from_numpy(np.array(test_inputs_iw)).float()
-    test_labels_ic = torch.from_numpy(np.array(test_labels_ic))
-    test_labels_iw = torch.from_numpy(np.array(test_labels_iw))
-    test_inputs = torch.from_numpy(np.array(test_inputs)).float()
-    test_labels = torch.from_numpy(np.array(test_labels))
+    test_inputs_ic = torch.from_numpy(np.array(test_inputs_ic)).float().to(device)
+    test_inputs_iw = torch.from_numpy(np.array(test_inputs_iw)).float().to(device)
+    test_labels_ic = torch.from_numpy(np.array(test_labels_ic)).to(device)
+    test_labels_iw = torch.from_numpy(np.array(test_labels_iw)).to(device)
+    test_inputs = torch.from_numpy(np.array(test_inputs)).float().to(device)
+    test_labels = torch.from_numpy(np.array(test_labels)).to(device)
     print_freq = 500  #5000
 
     # training loop
@@ -141,9 +141,9 @@ if __name__ == '__main__':
                                                                          B = B, p_B = pB, p_C = pC,
                                                                          output_target_labels = True,
                                                                          no_repeats = no_repeats)
-        inputs_batch = torch.from_numpy(inputs_batch).float()
-        labels_batch = torch.from_numpy(np.array(labels_batch))
-        target_classes = torch.from_numpy(target_classes)
+        inputs_batch = torch.from_numpy(inputs_batch).float().to(device)
+        labels_batch = torch.from_numpy(np.array(labels_batch)).to(device)
+        target_classes = torch.from_numpy(target_classes).to(device)
 
         optimizer.zero_grad()
         y_hat = model(inputs_batch)
