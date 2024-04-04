@@ -5,3 +5,4 @@ trajectories/*
 models/*
 wandb/
 experiments/iwl_icl_classification/results/*
+reddy/*
