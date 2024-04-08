@@ -45,9 +45,6 @@ class MaskedCausalAttention(nn.Module):
             if layer.bias is not None:
                 nn.init.constant_(layer.bias, 0)
 
-        for layer in [self.q_proj_weight, self.k_proj_weight, self.v_proj_weight]:
-            nn.init.normal_(layer, mean=0.0, std=scale)
-
     def forward(self, x):
         B, T, C = x.shape  # batch size, seq length, h_dim * n_heads
 
