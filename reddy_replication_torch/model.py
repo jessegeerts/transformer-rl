@@ -20,11 +20,6 @@ class MaskedCausalAttention(nn.Module):
         self.k_net = nn.Linear(h_dim, h_dim)
         self.v_net = nn.Linear(h_dim, h_dim)
 
-        # alternative form:
-        self.q_proj_weight = nn.Parameter(torch.empty((self.h_dim, self.h_dim)))
-        self.k_proj_weight = nn.Parameter(torch.empty((self.h_dim, self.h_dim)))
-        self.v_proj_weight = nn.Parameter(torch.empty((self.h_dim, self.h_dim)))
-
         self.proj_net = nn.Linear(h_dim, h_dim)
 
         self.drop_p = drop_p
@@ -43,7 +38,7 @@ class MaskedCausalAttention(nn.Module):
         self.training = True
 
     def init_weights(self):
-        # Initialize weights according to Reddy's code
+        # Initialize weights according to Reddy's code (note: weight initialization doesn't ssem to matter much )
         scale = 1 / math.sqrt(self.q_net.in_features)
         for layer in [self.q_net, self.k_net, self.v_net, self.proj_net]:
             nn.init.normal_(layer.weight, mean=0.0, std=scale)
@@ -52,30 +47,6 @@ class MaskedCausalAttention(nn.Module):
 
         for layer in [self.q_proj_weight, self.k_proj_weight, self.v_proj_weight]:
             nn.init.normal_(layer, mean=0.0, std=scale)
-
-    def forward_new(self, x):
-        B, T, D = x.shape
-
-        attn_mask = ~self.mask.squeeze().bool()[:T, :T]
-
-        # we have "batch_first=True" so we need to transpose first two dimensions
-        x = x.transpose(0, 1)
-
-        attn_output, attn_output_weights = F.multi_head_attention_forward(
-            x, x, x, self.h_dim, self.n_heads,
-            None, None,
-            self.k_net.bias, self.v_net.bias, False,
-            self.drop_p, self.proj_net.weight, self.proj_net.bias,
-            training=self.training,
-            key_padding_mask=None, need_weights=True,
-            attn_mask=attn_mask,
-            use_separate_proj_weight=True,
-            q_proj_weight=self.q_proj_weight, k_proj_weight=self.k_proj_weight,
-            v_proj_weight=self.v_proj_weight,
-            average_attn_weights=False,
-            is_causal=True)
-        # transpose back to batch_first
-        return attn_output.transpose(0, 1)
 
     def forward(self, x):
         B, T, C = x.shape  # batch size, seq length, h_dim * n_heads
@@ -100,7 +71,9 @@ class MaskedCausalAttention(nn.Module):
         # gather heads and project (B, N, T, D) -> (B, T, N*D)
         attention = attention.transpose(1, 2).contiguous().view(B, T, N * D)
 
-        out = self.proj_drop(self.proj_net(attention))
+        out = self.proj_net(attention)
+        if self.drop_p:
+            out = self.proj_drop(out)
         return out
 
 
