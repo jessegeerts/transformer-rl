@@ -31,8 +31,9 @@ config = dd(dict(
     train=dd(dict(
         batch_size=128,
         learning_rate=.01,
-        niters=150000
+        w_decay=1e-4,           # L2 regularisation parameter. note the torch implementation is a bit different from reddy jax code (it's multiplied by LR, so divide by LR to get desired w_decay param )
+        niters=150000*2
     )),
     log_to_wandb=True,
-    logging_interval=2000  # iterations
+    logging_interval=500  # iterations
 ))

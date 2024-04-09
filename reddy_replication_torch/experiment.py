@@ -44,7 +44,7 @@ else:
 
 ln = config.model.apply_ln if mod_name == 'custom' else True
 
-experiment_name = 'I{}_K{}_N{}_L{}_D{}_a{}_B{}_pB{}_pC{}_eps{}_lr{}_drop{}_{}_ln{}'.format(
+experiment_name = 'I{}_K{}_N{}_L{}_D{}_a{}_B{}_pB{}_pC{}_eps{}_lr{}_drop{}_{}_ln{}_wDecay{}'.format(
     config.train.niters,
     config.data.K,
     config.seq.N,
@@ -58,7 +58,8 @@ experiment_name = 'I{}_K{}_N{}_L{}_D{}_a{}_B{}_pB{}_pC{}_eps{}_lr{}_drop{}_{}_ln
     config.train.learning_rate,
     config.model.drop_p,
     mod_name,
-    ln
+    ln,
+    config.train.w_decay
 )
 config.model.out_dim = config.data.L
 print(experiment_name)
@@ -92,7 +93,7 @@ if custom_model:
     model = Transformer(config=config.model).to(device)   # my custom transformer encoder
 else:
     model = TorchTransformer(config=config.model).to(device)  # pytorch transformer encoder
-optimizer = optim.SGD(model.parameters(), lr=config.train.learning_rate)
+optimizer = optim.SGD(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.w_decay)
 criterion = nn.CrossEntropyLoss()
 
 
@@ -138,26 +139,26 @@ for n in range(config.train.niters):
 
     if n % config.logging_interval == 0:
         model.eval()
+        with torch.no_grad():
+            if config.log_to_wandb:
+                wandb.log({'train_loss': loss.item(), 'iter': n})
 
-        if config.log_to_wandb:
-            wandb.log({'train_loss': loss.item(), 'iter': n})
+            # evaluate on test set (same dist as training data)
+            test_loss, test_accuracy = eval_loss_and_accuracy(model, test_inputs, test_labels)
+            if config.log_to_wandb:
+                wandb.log({'test_loss': test_loss.item(), 'iter': n})
+                wandb.log({'test_accuracy': test_accuracy.item(), 'iter': n})
 
-        # evaluate on test set (same dist as training data)
-        test_loss, test_accuracy = eval_loss_and_accuracy(model, test_inputs, test_labels)
-        if config.log_to_wandb:
-            wandb.log({'test_loss': test_loss.item(), 'iter': n})
-            wandb.log({'test_accuracy': test_accuracy.item(), 'iter': n})
+            # evaluate on ICL
+            icl_loss, icl_accuracy = eval_loss_and_accuracy(model, test_inputs_ic, test_labels_ic)
+            if config.log_to_wandb:
+                wandb.log({'icl_loss': icl_loss.item(), 'iter': n})
+                wandb.log({'icl_accuracy': icl_accuracy.item(), 'iter': n})
 
-        # evaluate on ICL
-        icl_loss, icl_accuracy = eval_loss_and_accuracy(model, test_inputs_ic, test_labels_ic)
-        if config.log_to_wandb:
-            wandb.log({'icl_loss': icl_loss.item(), 'iter': n})
-            wandb.log({'icl_accuracy': icl_accuracy.item(), 'iter': n})
+            # evaluate on IWL
+            iwl_loss, iwl_accuracy = eval_loss_and_accuracy(model, test_inputs_iw, test_labels_iw)
+            if config.log_to_wandb:
+                wandb.log({'iwl_loss': iwl_loss.item(), 'iter': n})
+                wandb.log({'iwl_accuracy': iwl_accuracy.item(), 'iter': n})
 
-        # evaluate on IWL
-        iwl_loss, iwl_accuracy = eval_loss_and_accuracy(model, test_inputs_iw, test_labels_iw)
-        if config.log_to_wandb:
-            wandb.log({'iwl_loss': iwl_loss.item(), 'iter': n})
-            wandb.log({'iwl_accuracy': iwl_accuracy.item(), 'iter': n})
-
-        print(f'iter {n}, loss: {loss}, ic_accuracy: {icl_accuracy}, iw_accuracy: {iwl_accuracy}')
+            print(f'iter {n}, loss: {loss}, ic_accuracy: {icl_accuracy}, iw_accuracy: {iwl_accuracy}')
