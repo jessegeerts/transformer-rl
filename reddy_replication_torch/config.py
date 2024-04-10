@@ -35,5 +35,6 @@ config = dd(dict(
         niters=150000*2
     )),
     log_to_wandb=True,
-    logging_interval=500  # iterations
+    logging_interval=500,  # iterations
+    save_weights=True
 ))

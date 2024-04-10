@@ -45,7 +45,7 @@ class MaskedCausalAttention(nn.Module):
             if layer.bias is not None:
                 nn.init.constant_(layer.bias, 0)
 
-    def forward(self, x):
+    def forward(self, x, save_weights=False):
         B, T, C = x.shape  # batch size, seq length, h_dim * n_heads
 
         N, D = self.n_heads, C // self.n_heads  # N = num heads, D = attention dim
@@ -71,7 +71,9 @@ class MaskedCausalAttention(nn.Module):
         out = self.proj_net(attention)
         if self.drop_p:
             out = self.proj_drop(out)
-        return out
+        if save_weights:
+            return out, normalized_weights
+        return out, None
 
 
 class Block(nn.Module):
@@ -106,17 +108,20 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(h_dim)
         self.ln2 = nn.LayerNorm(h_dim)
 
-    def forward(self, x, index=None):
+    def forward(self, x, index=None, save_weights=False):
+        out_dict = {}
         # Attention -> LayerNorm -> MLP -> LayerNorm
-
-        x = x + self.attention(x)  # residual
+        attention, weights = self.attention(x, save_weights=save_weights)
+        if save_weights:
+            out_dict['weights'] = weights
+        x = x + attention  # residual
         if self.apply_ln:
             x = self.ln1(x)
         if self.include_mlp:
             x = x + self.mlp(x)  # residual
         if self.apply_ln:
             x = self.ln2(x)
-        return x
+        return x, out_dict
 
 
 class Transformer(nn.Module):
@@ -156,7 +161,8 @@ class Transformer(nn.Module):
         self.ln = nn.LayerNorm(h_dim)
         self.proj_head = nn.Linear(h_dim, out_dim)
 
-    def forward(self, x):
+    def forward(self, x, save_weights=False):
+        out_dict = {}
         # embed inputs, if required
         if self.input_embedder is None:
             h = x
@@ -164,11 +170,13 @@ class Transformer(nn.Module):
             h = self.input_embedder(x)
         # pass through the transformer layers
         for index, block in enumerate(self.blocks):
-            h = block(h, index=index)
+            h, out = block(h, index=index, save_weights=save_weights)
+            if save_weights:
+                out_dict[f'block_{index}'] = out
         # finally, predict the logits
         pred = self.proj_head(h)
 
-        return pred[:, -1]
+        return pred[:, -1], out_dict
 
 
 if __name__=='__main__':

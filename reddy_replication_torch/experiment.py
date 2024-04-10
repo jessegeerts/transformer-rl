@@ -14,11 +14,11 @@ from definitions import WANDB_KEY
 
 
 def eval_loss_and_accuracy(mod, inputs, labels, criterion):
-    y_hat = mod(inputs)
+    y_hat, out_dict = mod(inputs, save_weights=config.save_weights)
     loss = criterion(y_hat, torch.argmax(labels.float(), dim=-1))
     predicted_labels = torch.argmax(y_hat, dim=1)
     accuracy = (predicted_labels == torch.argmax(labels.float(), dim=-1)).float().mean()
-    return loss, accuracy
+    return loss, accuracy, out_dict
 
 
 def set_config(config):
@@ -173,7 +173,7 @@ def main(config):
 
         optimizer.zero_grad()
         # forward_pass_start = time.time()
-        y_hat = model(inputs_batch)
+        y_hat, out_dict = model(inputs_batch)
         # forward_pass_end = time.time()
         # print(f'time taken for forward pass: {forward_pass_end-forward_pass_start}')
 
@@ -193,19 +193,22 @@ def main(config):
                     wandb.log({'train_loss': loss.item(), 'iter': n})
 
                 # evaluate on test set (same dist as training data)
-                test_loss, test_accuracy = eval_loss_and_accuracy(model, test_inputs, test_labels, criterion)
+                test_loss, test_accuracy, out_dict = eval_loss_and_accuracy(model, test_inputs, test_labels, criterion)
                 if config.log_to_wandb:
                     wandb.log({'test_loss': test_loss.item(), 'iter': n})
                     wandb.log({'test_accuracy': test_accuracy.item(), 'iter': n})
+                    if config.save_weights:
+                        wandb.log({'l0_attn_map_test': wandb.Image(out_dict['block_0']['weights'].mean(axis=0).numpy()), 'iter': n})  # note: now we're logging the mean of the attention weights across data points
+                        wandb.log({'l1_attn_map_test': wandb.Image(out_dict['block_1']['weights'].mean(axis=0).numpy()), 'iter': n})
 
                 # evaluate on ICL
-                icl_loss, icl_accuracy = eval_loss_and_accuracy(model, test_inputs_ic, test_labels_ic, criterion)
+                icl_loss, icl_accuracy, out_dict = eval_loss_and_accuracy(model, test_inputs_ic, test_labels_ic, criterion)
                 if config.log_to_wandb:
                     wandb.log({'icl_loss': icl_loss.item(), 'iter': n})
                     wandb.log({'icl_accuracy': icl_accuracy.item(), 'iter': n})
 
                 # evaluate on IWL
-                iwl_loss, iwl_accuracy = eval_loss_and_accuracy(model, test_inputs_iw, test_labels_iw, criterion)
+                iwl_loss, iwl_accuracy, out_dict = eval_loss_and_accuracy(model, test_inputs_iw, test_labels_iw, criterion)
                 if config.log_to_wandb:
                     wandb.log({'iwl_loss': iwl_loss.item(), 'iter': n})
                     wandb.log({'iwl_accuracy': iwl_accuracy.item(), 'iter': n})
