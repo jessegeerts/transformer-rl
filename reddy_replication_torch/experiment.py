@@ -5,12 +5,14 @@ import numpy as np
 import wandb
 import time
 import argparse
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 from reddy_replication_torch.config import config
 from reddy_replication_torch.model import Transformer
 from reddy_replication_torch.inbuilt_model import TorchTransformer
 from reddy.datasets_v2 import *
-from definitions import WANDB_KEY
+from definitions import WANDB_KEY, ATTENTION_CMAP
 
 
 def eval_loss_and_accuracy(mod, inputs, labels, criterion):
@@ -32,7 +34,7 @@ def set_config(config):
     parser.add_argument("--n_heads", type=int)
     parser.add_argument("--n_blocks", type=int)
     parser.add_argument("--activation", type=str)
-    parser.add_argument("--apply_ln", type=bool)
+    parser.add_argument('--apply_ln', type=int, choices=[1, 0], help="Enable LayerNorm in the model.")
     parser.add_argument("--widening_factor", type=int)
     parser.add_argument("--max_T", type=int)
     parser.add_argument("--drop_p", type=float)
@@ -54,13 +56,17 @@ def set_config(config):
     parser.add_argument("--w_decay", type=float)
     parser.add_argument("--niters", type=int)
     # logging
-    parser.add_argument("--log_to_wandb", type=bool)
+    parser.add_argument("--log_to_wandb", type=bool)  # this doesn't work with argparse,
     parser.add_argument("--logging_interval", type=int)
 
     args = parser.parse_args()
 
     # update config with command line arguments
     for key, value in vars(args).items():
+        # convert int to boolean
+        if key == "apply_ln":
+            value = value == 1
+        # only update if value is not None
         if value is not None:
             if key in config.model:
                 config.model[key] = value
@@ -198,14 +204,28 @@ def main(config):
                     wandb.log({'test_loss': test_loss.item(), 'iter': n})
                     wandb.log({'test_accuracy': test_accuracy.item(), 'iter': n})
                     if config.save_weights:
-                        wandb.log({'l0_attn_map_test': wandb.Image(out_dict['block_0']['weights'].mean(axis=0).numpy()), 'iter': n})  # note: now we're logging the mean of the attention weights across data points
-                        wandb.log({'l1_attn_map_test': wandb.Image(out_dict['block_1']['weights'].mean(axis=0).numpy()), 'iter': n})
+                        fig1, ax1 = plt.subplots()
+                        ax1.imshow(out_dict['block_0']['weights'].mean(axis=0).squeeze(), cmap=ATTENTION_CMAP)
+                        wandb.log({'l0_attn_map_test': fig1, 'iter': n})  # note: now we're logging the mean of the attention weights across data points
+                        fig2, ax2 = plt.subplots()
+                        ax2.imshow(out_dict['block_1']['weights'].mean(axis=0).squeeze(), cmap=ATTENTION_CMAP)
+                        wandb.log({'l1_attn_map_test': fig2, 'iter': n})
+                        plt.close('all')
 
-                # evaluate on ICL
+                # evaluate on ICLs
                 icl_loss, icl_accuracy, out_dict = eval_loss_and_accuracy(model, test_inputs_ic, test_labels_ic, criterion)
                 if config.log_to_wandb:
                     wandb.log({'icl_loss': icl_loss.item(), 'iter': n})
                     wandb.log({'icl_accuracy': icl_accuracy.item(), 'iter': n})
+                    if config.save_weights:
+                        fig1, ax1 = plt.subplots()
+                        ax1.imshow(out_dict['block_0']['weights'].mean(axis=0).squeeze(), cmap=ATTENTION_CMAP)
+                        wandb.log({'l0_attn_map_icl': fig1, 'iter': n})  # note: now we're logging the mean of the attention weights across data points
+                        fig2, ax2 = plt.subplots()
+                        ax2.imshow(out_dict['block_1']['weights'].mean(axis=0).squeeze(), cmap=ATTENTION_CMAP)
+                        wandb.log({'l1_attn_map_icl': fig2, 'iter': n})
+                        plt.close('all')
+
 
                 # evaluate on IWL
                 iwl_loss, iwl_accuracy, out_dict = eval_loss_and_accuracy(model, test_inputs_iw, test_labels_iw, criterion)
